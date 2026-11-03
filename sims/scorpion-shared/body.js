@@ -345,6 +345,27 @@ export function buildBody(M) {
           a.add('orange', g);
         }
       }
+      // exposed dark rib tab under the shell edge on both flanks, and a second orange line lower down
+      for (const s of [1, -1]) {
+        a.box('dark', 0.018, 0.075, 0.02, x, 0.462, s * (halfW(x) + 0.014), 0.003);
+        a.box('steel', 0.02, 0.014, 0.022, x, 0.5, s * (halfW(x) + 0.016), 0.002);
+        const z2 = s * hw * 0.45;
+        const y2 = main.surfAt(x, z2);
+        const g2 = rbox(0.09, 0.0026, 0.01, 0.001);
+        g2.rotateX(-Math.atan((2 * (topY(x) - edgeY(x) + 0.012) * z2) / (hw * hw)));
+        g2.translate(x, y2 + 0.003, z2);
+        a.add('orange', g2);
+      }
+    }
+    // a middle bolt row on every plate so the shell reads as bolted armour, not a smooth dome
+    for (let pi = 0; pi < 6; pi++) {
+      const x = 0.25 - pi * 0.14;
+      const hw = halfW(x) + 0.006;
+      for (let i = 0; i <= 6; i++) {
+        const z = -hw * 0.7 + (i / 6) * 1.4 * hw;
+        const y = main.surfAt(x, z);
+        a.hole([x, y + 0.002, z], [0, 1, (2 * (topY(x) - edgeY(x) + 0.012) * z) / (hw * hw)], 0.0032);
+      }
     }
     // orange trim along the flank edges
     for (const s of [1, -1]) {
@@ -428,7 +449,16 @@ export function buildBody(M) {
   h.box('steel', 0.11, 0.01, 0.13, 0.465, 0.423, 0, 0.003); // base flange on the front frame
   for (const sx of [-0.038, 0.038]) for (const sz of [-0.045, 0.045]) h.hole([0.465 + sx, 0.429, sz], [0, 1, 0], 0.004);
   h.box('graphite', 0.09, 0.026, 0.1, 0.465, 0.44, 0, 0.004); // neck
-  h.box('ivory', 0.12, 0.11, 0.2, HX, 0.505, 0, 0.022); // main housing (rounded, reference bulb)
+  h.box('white', 0.128, 0.115, 0.215, HX, 0.508, 0, 0.024); // main housing (rounded, reference bulb)
+  // faceted white head shield: a low-poly dome over the housing, with a white brow over the dark face
+  {
+    const hood = new THREE.IcosahedronGeometry(1, 1);
+    hood.scale(0.088, 0.05, 0.132);
+    h.add('ivory', hood.translate(HX - 0.004, 0.56, 0));
+    for (const s of [1, -1]) h.add('white', new THREE.IcosahedronGeometry(1, 0).scale(0.03, 0.028, 0.045).translate(HX - 0.02, 0.548, s * 0.085));
+    h.box('white', 0.045, 0.016, 0.17, 0.552, 0.545, 0, 0.005); // brow over the visor
+    h.box('graphite', 0.05, 0.008, 0.1, 0.5, 0.596, 0, 0.003); // hood rib
+  }
   // smoked glass visor across the front, with the optics recessed behind it
   h.box('smoke', 0.012, 0.095, 0.17, 0.552, 0.505, 0, 0.008);
   h.box('graphite', 0.03, 0.012, 0.19, 0.545, 0.56, 0, 0.004); // visor top rail
