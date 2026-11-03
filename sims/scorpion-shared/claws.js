@@ -39,14 +39,17 @@ export const CLAWGEO = {
 };
 const C = CLAWGEO;
 const D = CLAW_DRIVE;
+// the chela (palm + fingers) is the signature scorpion claw: the reference claws are visibly bigger than the kin grip
+// envelope, so the whole chela assembly is modelled 20% larger; the arm / forearm stay on the kin skeleton
+const CH = 1.2;
 const box = (x0, x1, y0, y1, z0, z1, r = 0.004) => rbox(x1 - x0, y1 - y0, z1 - z0, r).translate((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
 
 /** nut pin u (m, along the screw from the pivot) and link angle for finger opening gap, as kin.js clawDrive */
-export function nutU(gap) {
-  const px = -D.crank * Math.sin(gap);
-  const py = D.crank * Math.cos(gap);
-  const dv = py - D.offset;
-  const u = px - Math.sqrt(D.link * D.link - dv * dv);
+export function nutU(gap, ch = 1) {
+  const px = -D.crank * ch * Math.sin(gap);
+  const py = D.crank * ch * Math.cos(gap);
+  const dv = py - D.offset * ch;
+  const u = px - Math.sqrt((D.link * ch) ** 2 - dv * dv);
   return {u, ang: Math.atan2(dv, px - u)};
 }
 
@@ -285,6 +288,8 @@ export function buildClaws(M) {
       B[k].name = `${sys}.${k}`;
       R.add(B[k]);
     }
+    // the chela shell + fingers + drive mechanism are scaled together so they stay mechanically coherent
+    for (const k of ['chela', 'nut', 'link', 'finger']) B[k].scale.setScalar(CH);
     if (side > 0) {
       const mo = mountPart(M, true);
       const yo = yokePart(M, true);
@@ -336,9 +341,10 @@ export function buildClaws(M) {
       dd.set(P.d[0], P.d[1], P.d[2] * side);
       frameY(B.chela, W, dd, UP);
       // drive: finger about the pivot, nut on the screw, link between them (chela frame -> parented poses)
-      const [px, pz] = C.pivot;
+      const px = C.pivot[0] * CH;
+      const pz = C.pivot[1] * CH;
       const gap = P.gap;
-      const {u, ang} = nutU(gap);
+      const {u, ang} = nutU(gap, CH);
       for (const k of ['nut', 'link', 'finger']) {
         B[k].position.copy(B.chela.position);
         B[k].quaternion.copy(B.chela.quaternion);
@@ -347,7 +353,7 @@ export function buildClaws(M) {
       const off = (x, y, z) => new V3(x, y, z).applyQuaternion(q).add(W);
       B.finger.position.copy(off(px, 0, pz));
       B.finger.quaternion.copy(q).multiply(new THREE.Quaternion().setFromAxisAngle(UP, -gap));
-      B.nut.position.copy(off(px + u, C.linkY, pz + D.offset));
+      B.nut.position.copy(off(px + u, C.linkY * CH, pz + D.offset * CH));
       B.link.position.copy(B.nut.position);
       B.link.quaternion.copy(q).multiply(new THREE.Quaternion().setFromAxisAngle(UP, -ang));
     });

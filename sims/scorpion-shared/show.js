@@ -154,7 +154,7 @@ export const VIEW_FN = {
   // high angle so the jointCut windows that open upward on the L1 hip + knee read face-on
   leg: (u) => ({tx: 0.435, ty: 0.515, tz: 0.36, az: 310.65 + 0.9 * u, el: 44, d: 2.45, sx: 6, sy: -24}),
   // whole claw inside the panels, chela drive centred
-  claw: (u) => ({tx: 1.1335, ty: 0.4313, tz: 0.1131, az: 301.8 + 0.8 * u, el: 24, d: 2.05, sx: 312, sy: 128}),
+  claw: (u) => ({tx: 1.185, ty: 0.438, tz: 0.118, az: 301.8 + 0.8 * u, el: 24, d: 2.44, sx: 312, sy: 128}),
   // near side view: drum faces (graphite flange / steel hub) show, tail fills the frame like official s007
   tail: (u) => ({tx: -0.489, ty: 1.056, tz: 0, az: 268.9 - 0.6 * u, el: 10, d: 3.47, sx: -172, sy: -154}),
   sting: (u) => ({tx: 0.015, ty: 0.806, tz: 0, az: 237.5 + 1.0 * u, el: 12, d: 3.6, sx: 54, sy: -52}),
