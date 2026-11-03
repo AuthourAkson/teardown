@@ -8,13 +8,15 @@
 |---|---|---|---|---|
 | v1 原始版 | `v1-original-teardown-sc8` / `5d1bb4f` | 旧版 SC-8 简化模型（Telson 式外壳 + 35 s 版影片时代），仅作对照 | `versions/v1-original-teardown-sc8-source.zip` | `versions/media/v1-original-film.mp4` |
 | v2 opus 精进版 | `v2-opus-refine` / `21ee02e` | opus 精修版：平甲板式躯干（后被否定）、灰色关节、控制台/相机标定 | `versions/v2-opus-refine-source.zip` | `versions/media/v2-opus-refine-film.mp4` |
-| v3 分段甲壳版（本轮） | `v3-segmented-carapace` / `dc3f49c` | 黑关节/象牙白/橙红配色回正；连续圆顶分段背甲；分面装甲钳+可见丝杠；黑端面尾鼓+橙环 | `versions/v3-segmented-carapace-source.zip` | `versions/media/v3-segmented-carapace-film.mp4` |
+| v3 分段甲壳版 | `v3-segmented-carapace` / `dc3f49c` | 黑关节/象牙白/橙红配色回正；连续圆顶分段背甲；分面装甲钳+可见丝杠；黑端面尾鼓+橙环 | `versions/v3-segmented-carapace-source.zip` | `versions/media/v3-segmented-carapace-film.mp4` |
+| v4 头盾+背甲细节（当前） | `v4-head-shield` / `b526b53` | v3 基础上：白色多面头盾+暗色面甲、背甲叠边/中排螺栓/侧肋块/第二道橙线 | `versions/v4-head-shield-source.zip` | `versions/media/v4-head-shield-film.mp4` |
 
-## 下一轮（v4）将包含
+## 下一轮（v5）候选
 
-- 背甲层叠分段（外露深色肋架 + 甲片叠边/螺柱）按官方 s013/s016 逐帧对照；
-- 头部"头盾 + 暗色面甲"重做；
-- 定稿后：同步 `_publish` → commit → tag `v4-...` → push → `git archive` 到 `versions/` → 归档成片。
+- 背甲进一步层叠：甲片端部做真实台阶与阴影缝、外露深色肋架/液压杆，按官方 s013/s016 逐帧对照；
+- 头盾与颈部的衔接、暗色面甲内的传感器细节；
+- 加强官方那种"黑骨架占比"：装甲缝隙处露肋骨与管线；
+- 定稿后：同步 `_publish` → commit → tag `v5-...` → push → `git archive` 到 `versions/` → 归档成片。
 
 ## 每轮定稿流程（Lead 执行）
 
