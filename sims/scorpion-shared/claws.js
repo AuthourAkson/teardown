@@ -6,10 +6,11 @@
 //   elbow  drum at E, axis normal to the arm / forearm plane
 //   fore   E -> W: bigger ribbed link, orange ring band
 //   wrist  drum at W, axis normal to the forearm / chela plane
-//   chela  the big fixed jaw: a faceted white armour shell (6 panels over a black skeleton) with an orange wrist ring,
-//          an open drive bay on top (PMSM motor -> planetary 10:1 -> Tr20x4 lead screw -> bronze nut on a guide rail ->
-//          push link -> crank pin on the movable finger, single pivot), black curved fingertips with orange serrated
-//          grip pads. Fixed finger and movable finger: black tips, orange serrated pads.
+//   chela  the big fixed jaw: a layered white armour shell (10 panel groups over a black skeleton: seams, bolt holes,
+//          service hatches, vent slits, two orange accents) with an orange wrist ring, an open drive bay on top
+//          (PMSM motor -> planetary 10:1 -> Tr20x4 lead screw -> bronze nut on a guide rail -> push link -> crank pin on
+//          the movable finger, single pivot), an exposed black jaw hinge with a steel pivot cap, and long black pincer
+//          fingers curving in toward each other with orange serrated grip pads.
 //   nut, link, finger  the three moving parts of the drive, placed from the same nut / link / finger relation as
 //          kin.js clawDrive(), so the console's numbers and the parts agree.
 // Geometry is authored for the LEFT claw in the chela frame (x along kin `d`, y up, z outward); the right claw is a
@@ -57,7 +58,7 @@ export function nutU(gap, ch = 1) {
  * Serrated grip pad outline in the plan plane (x, z): a strip along the cutting edge `edge` (polyline [[x, z], ...])
  * with saw teeth on the jaw-facing side and a plain backing on the other. dir = +1: the edge faces +z; dir = -1: -z.
  */
-function serratedPad(edge, {n = 6, depth = 0.012, tooth = 0.004, dir = 1} = {}) {
+function serratedPad(edge, {n = 6, depth = 0.012, tooth = 0.004, dir = 1, shift = 0.004} = {}) {
   const at = (u) => {
     const k = Math.min(edge.length - 2, Math.floor(u));
     const t = u - k;
@@ -67,11 +68,11 @@ function serratedPad(edge, {n = 6, depth = 0.012, tooth = 0.004, dir = 1} = {}) 
   const inn = [];
   for (let i = 0; i <= n; i++) {
     const [x, z] = at((i / n) * (edge.length - 1));
-    out.push([x, z + dir * (i % 2 ? 0 : tooth)]);
+    out.push([x, z + dir * (shift + (i % 2 ? 0 : tooth))]);
   }
   for (let i = n; i >= 0; i--) {
     const [x, z] = at((i / n) * (edge.length - 1));
-    inn.push([x - tooth * 0.3, z - dir * depth]);
+    inn.push([x - tooth * 0.3, z + dir * (shift - depth)]);
   }
   return out.concat(inn);
 }
@@ -94,46 +95,70 @@ function chelaBody(M) {
     g.add(p);
     return p;
   };
-  // ---- wrist: dark neck around the wrist drum, the orange ring band, the fork plates that clasp the drum
+  // ---- wrist: slimmed dark neck behind a smaller orange ring, so more graphite skeleton shows at the wrist neck
   const fy = C.wrist.len / 2 + 0.012;
   for (const s of [1, -1]) add(lever(0, C.wrist.r * 0.5, 0.07, 0.034, 0.01).rotateX(Math.PI / 2).translate(0, s * fy, 0), 'graphite');
-  add(xcyl(0.056, 0.044, 0.078, 28), 'graphite'); // neck: turns with the wrist output into the shell
-  add(ring(0.078, 0.063, 0.014, 40).rotateZ(Math.PI / 2).translate(0.068, 0, 0), 'orange'); // orange wrist ring
-  add(ring(0.081, 0.074, 0.007, 40).rotateZ(Math.PI / 2).translate(0.056, 0, 0), 'steel'); // clamp ring behind it
-  // ---- white armour: 6 panel groups, 4 mm seams, black bolt holes, one thin orange accent
-  // 1 inner top shell (2 tiles) over the spine, stepped at the seam
-  panel(0.232, 0.016, 0.066, {seams: 2, bolts: 3, arch: 0.007, boltR: 0.0038}, 0.19, 0.078, -0.052);
-  // one thin orange accent along its outer edge
-  bx(0.2, 0.284, 0.081, 0.088, -0.059, -0.049, 0.002, 'orange');
-  // 2 inner flank wall (2 tiles)
-  panel(0.235, 0.014, 0.162, {seams: 2, bolts: 3, arch: 0.006, boltR: 0.0036}, 0.19, -0.012, -0.081, [-Math.PI / 2, 0, 0]);
-  // 3 belly shell (2 tiles), black bolt holes on the underside
-  panel(0.24, 0.014, 0.152, {seams: 2, bolts: 2, arch: 0.005, boltR: 0.0036}, 0.195, -0.09, -0.005, [Math.PI, 0, 0]);
-  // 4 outer flank wall under the drive bay (2 tiles), bevel shoulder below the screw
-  panel(0.2, 0.014, 0.104, {seams: 2, bolts: 2, arch: 0.004, boltR: 0.0036}, 0.185, -0.042, 0.081, [Math.PI / 2, 0, 0]);
-  // 5 rear cowl over the wrist end of the bay (with black bolt holes)
-  add(planSlab([[0.068, 0.04], [0.09, 0.045], [0.094, 0.076], [0.074, 0.076]], 0.026, 0.066, 0.012), 'white');
-  g.add(bolts([{p: [0.072, 0.0665, 0.05]}, {p: [0.094, 0.0665, 0.045]}, {p: [0.068, 0.0665, 0.08]}, {p: [0.1, 0.0665, 0.072]}], {M, r: 0.0038}));
-  // 6 front jaw shell: the fixed jaw's white nose, upper and lower plates with a 4 mm seam between them
-  add(planSlab([[0.314, -0.076], [0.338, -0.072], [0.348, -0.062], [0.348, -0.05], [0.338, -0.044], [0.322, -0.046], [0.314, -0.052]], -0.086, -0.006, 0.012), 'white');
-  add(planSlab([[0.318, -0.072], [0.338, -0.068], [0.346, -0.06], [0.344, -0.05], [0.336, -0.046], [0.324, -0.048], [0.318, -0.056]], -0.002, 0.07, 0.014), 'white');
-  g.add(bolts([{p: [0.325, 0.0705, -0.062]}, {p: [0.35, 0.0705, -0.054]}, {p: [0.325, 0.0705, -0.044]}, {p: [0.35, 0.0705, -0.038]}], {M, r: 0.0038}));
-  // ---- black skeleton: the bay frame, the slanted ribs over the open bay, the pivot bracket
-  bx(0.094, 0.108, -0.062, 0.062, -0.026, 0.072, 0.003); // rear bulkhead (behind the bay)
-  bx(0.252, 0.268, -0.062, 0.066, -0.026, 0.072, 0.004); // front bulkhead
-  bx(0.108, 0.268, 0.038, 0.058, -0.026, -0.012, 0.003); // inner top rail
-  bx(0.108, 0.268, 0.008, 0.05, 0.07, 0.086, 0.003, 'graphite'); // outer lip (top of the outer flank)
-  bx(0.108, 0.268, -0.064, -0.05, -0.026, 0.07, 0.004, 'graphite'); // bay floor
-  bx(0.108, 0.268, -0.064, 0.038, -0.028, -0.014, 0.003, 'graphite'); // inner bay wall
-  for (const x of [0.165, 0.205, 0.245]) add(new THREE.BoxGeometry(0.008, 0.011, 0.1).rotateX(0.255).translate(x, 0.043, 0.028), 'dark'); // slanted skeleton ribs
-  bx(0.268, 0.306, -0.056, 0.016, -0.06, 0.05, 0.004); // pivot bracket under the knuckle
+  add(xcyl(0.052, 0.04, 0.078, 28), 'graphite'); // neck: turns with the wrist output into the shell
+  add(ring(0.073, 0.059, 0.011, 40).rotateZ(Math.PI / 2).translate(0.056, 0, 0), 'orange'); // orange wrist ring band
+  add(ring(0.076, 0.069, 0.007, 40).rotateZ(Math.PI / 2).translate(0.045, 0, 0), 'steel'); // clamp ring behind it
+  add(ring(0.057, 0.049, 0.008, 36).rotateZ(Math.PI / 2).translate(0.04, 0, 0), 'dark'); // exposed neck collar
+  // ---- white armour: 10 panel groups over the black skeleton, 4 mm seams, black bolt holes, 2 orange accents.
+  // the palm is deepened (y ~0.205) and widened (z ~0.187) for a heavy power claw.
+  // 1 inner top shell (2 tiles) over the spine, now stopping short of the jaw hinge so the black hinge block reads
+  panel(0.19, 0.016, 0.072, {seams: 2, bolts: 3, arch: 0.007, boltR: 0.0038}, 0.173, 0.085, -0.056);
+  // thin orange accent on the rear half of the shell
+  bx(0.1, 0.156, 0.0995, 0.1035, -0.062, -0.052, 0.002, 'orange');
+  // 2 layered top plate (2 tiles) overlapping the front half of the shell
+  panel(0.09, 0.012, 0.058, {seams: 2, bolts: 2, arch: 0.004, boltR: 0.0035}, 0.212, 0.0965, -0.05);
+  // second thin orange accent on the layered plate
+  bx(0.188, 0.236, 0.1025, 0.1055, -0.066, -0.056, 0.002, 'orange');
+  // 3 rear shoulder plate over the shell / cowl seam
+  panel(0.06, 0.012, 0.05, {seams: 1, bolts: 2, arch: 0.004, boltR: 0.0035}, 0.103, 0.0975, -0.048);
+  // 4 inner flank wall (2 tiles)
+  panel(0.226, 0.014, 0.182, {seams: 2, bolts: 3, arch: 0.006, boltR: 0.0036}, 0.185, -0.008, -0.0865, [-Math.PI / 2, 0, 0]);
+  // 5 belly shell (2 tiles), black bolt holes on the underside
+  panel(0.225, 0.014, 0.178, {seams: 2, bolts: 2, arch: 0.005, boltR: 0.0036}, 0.19, -0.095, -0.004, [Math.PI, 0, 0]);
+  // 6 outer flank wall under the drive bay (2 tiles, 2 vent slits)
+  panel(0.2, 0.014, 0.118, {seams: 2, bolts: 2, arch: 0.004, boltR: 0.0036, vents: {n: 2, len: 0.05, at: [0.35, 0]}}, 0.18, -0.044, 0.0865, [Math.PI / 2, 0, 0]);
+  // 7 jaw-side cheek plate closing the front-outer corner
+  add(planSlab([[0.272, 0.072], [0.3, 0.072], [0.304, 0.086], [0.276, 0.086]], -0.1, 0.045, 0.008), 'white');
+  // 8 chin plate under the jaw nose
+  panel(0.055, 0.012, 0.05, {seams: 1, bolts: 2, arch: 0.003, boltR: 0.0034}, 0.318, -0.099, -0.058, [Math.PI, 0, 0]);
+  // 9 rear cowl over the wrist end of the bay (with black bolt holes)
+  add(planSlab([[0.066, 0.042], [0.088, 0.047], [0.092, 0.08], [0.072, 0.08]], 0.03, 0.072, 0.012), 'white');
+  g.add(bolts([{p: [0.07, 0.0725, 0.05]}, {p: [0.092, 0.0725, 0.047]}, {p: [0.066, 0.0725, 0.08]}, {p: [0.096, 0.0725, 0.072]}], {M, r: 0.0038}));
+  // 10 front jaw shell: the fixed jaw's white nose, upper and lower plates with a 4 mm seam between them
+  add(planSlab([[0.314, -0.0815], [0.338, -0.076], [0.348, -0.064], [0.348, -0.05], [0.338, -0.043], [0.322, -0.046], [0.314, -0.053]], -0.092, -0.006, 0.012), 'white');
+  add(planSlab([[0.318, -0.0775], [0.338, -0.072], [0.346, -0.062], [0.344, -0.05], [0.336, -0.045], [0.324, -0.048], [0.318, -0.057]], -0.002, 0.076, 0.014), 'white');
+  g.add(bolts([{p: [0.325, 0.0765, -0.062]}, {p: [0.35, 0.0765, -0.054]}, {p: [0.325, 0.0765, -0.044]}, {p: [0.35, 0.0765, -0.038]}], {M, r: 0.0038}));
+  // ---- service covers: bolt-on hatch plates on both flanks (reference service access)
+  add(box(0.131, 0.179, -0.068, -0.032, 0.0905, 0.094, 0.004), 'white');
+  g.add(bolts([{p: [0.138, -0.06, 0.0942]}, {p: [0.172, -0.06, 0.0942]}, {p: [0.138, -0.04, 0.0942]}, {p: [0.172, -0.04, 0.0942]}], {M, r: 0.0026}));
+  bx(0.15, 0.16, -0.054, -0.048, 0.094, 0.0952, 0.0012, 'dark'); // latch slot
+  add(box(0.11, 0.152, -0.08, -0.048, -0.094, -0.0905, 0.004), 'white');
+  g.add(bolts([{p: [0.116, -0.072, -0.0942]}, {p: [0.146, -0.072, -0.0942]}, {p: [0.116, -0.056, -0.0942]}, {p: [0.146, -0.056, -0.0942]}], {M, r: 0.0026}));
+  // ---- black skeleton: the bay frame, the slanted ribs over the open bay, the exposed jaw hinge
+  bx(0.094, 0.108, -0.062, 0.07, -0.026, 0.078, 0.003); // rear bulkhead (behind the bay)
+  bx(0.252, 0.268, -0.062, 0.074, -0.026, 0.078, 0.004); // front bulkhead
+  bx(0.108, 0.268, 0.045, 0.065, -0.026, -0.012, 0.003); // inner top rail
+  bx(0.108, 0.268, 0.01, 0.055, 0.078, 0.0935, 0.003, 'graphite'); // outer lip (top of the outer flank)
+  bx(0.108, 0.268, -0.064, -0.05, -0.026, 0.078, 0.004, 'graphite'); // bay floor
+  bx(0.108, 0.268, -0.064, 0.045, -0.028, -0.014, 0.003, 'graphite'); // inner bay wall
+  for (const x of [0.165, 0.205, 0.245]) add(new THREE.BoxGeometry(0.008, 0.011, 0.112).rotateX(0.24).translate(x, 0.048, 0.031), 'dark'); // slanted skeleton ribs
+  // exposed jaw hinge: black hinge block + steel pivot cap above the white knuckle (the shell stops short of it)
+  bx(0.25, 0.288, 0.072, 0.081, -0.058, 0.02, 0.01); // hinge plate
+  add(cyl(0.021, 0.008, 28).translate(px, 0.0855, pz), 'graphite'); // bearing boss
+  add(cyl(0.01, 0.01, 20).translate(px, 0.0925, pz), 'steel'); // pivot pin cap
+  g.add(bolts(boltCircle(0.016, 6, 0.0825, 0.3), {M, r: 0.0028, head: true, mat: 'steel'}));
+  bx(0.268, 0.308, -0.056, 0.022, -0.072, 0.052, 0.004); // pivot bracket under the knuckle
   // pivot pin with big bosses through the knuckle
-  add(cyl(0.011, 0.132, 20).translate(px, 0, pz), 'steel');
+  add(cyl(0.011, 0.14, 20).translate(px, 0, pz), 'steel');
   for (const s of [1, -1]) add(cyl(0.029, 0.012, 28).translate(px, s * 0.055, pz), 'graphite');
   for (const s of [1, -1]) bx(px - 0.052, px + 0.03, s * 0.049 - 0.007, s * 0.049 + 0.007, pz - 0.046, pz + 0.03, 0.003, 'graphite');
-  // ---- the fixed fingertip: black curved fang with an orange serrated grip pad on its cutting edge
-  add(planSlab([[0.314, -0.074], [0.352, -0.07], [0.396, -0.056], [0.424, -0.036], [0.432, -0.024], [0.432, -0.014], [0.424, -0.012], [0.396, -0.03], [0.36, -0.05], [0.314, -0.058]], -0.03, 0.03, 0.012), 'dark');
-  add(planSlab(serratedPad([[0.302, -0.062], [0.36, -0.05], [0.4, -0.026], [0.432, -0.008]], {n: 7, depth: 0.012, tooth: 0.004, dir: 1}), -0.036, 0.036, 0.003), 'orange');
+  // ---- the fixed fingertip: long black fang curving in toward the movable finger, sharp 3-D tip, orange serrated pad
+  add(planSlab([[0.3, -0.082], [0.34, -0.076], [0.38, -0.062], [0.404, -0.044], [0.412, -0.03], [0.408, -0.014], [0.39, -0.018], [0.36, -0.03], [0.32, -0.048], [0.3, -0.054]], -0.036, 0.036, 0.008), 'dark');
+  add(planSlab([[0.378, -0.028], [0.42, -0.016], [0.452, -0.006], [0.446, 0.0], [0.416, -0.008], [0.378, -0.02]], -0.011, 0.011, 0.002), 'dark');
+  add(planSlab(serratedPad([[0.3, -0.054], [0.34, -0.046], [0.38, -0.028], [0.412, -0.01], [0.432, 0.002]], {n: 9, depth: 0.011, tooth: 0.004, dir: 1, shift: 0.004}), -0.015, 0.015, 0.003), 'orange');
   // ---- drive: motor, planetary, coupling, bearing blocks, screw, guide rail (screw / rail are static parts)
   const [m0, m1, mr] = C.motor;
   const yz = (geo) => geo.translate(0, C.screwY, zs);
@@ -179,12 +204,13 @@ function fingerPart(M) {
   // crank plate from the pivot to the crank pin (on the drive side, at the link height)
   add(lever(0, 0.022, D.crank, 0.014, 0.012).rotateX(Math.PI / 2).rotateY(-Math.PI / 2).translate(0, C.linkY, 0), 'graphite');
   add(cyl(0.024, 0.04, 28), 'steel'); // hub ring on the pivot
-  // movable jaw: a black curved blade with an orange serrated grip pad on its cutting edge, and a white knuckle
-  // shell over the root (the fixed jaw's white nose sits inboard of it)
-  const blade = [[-0.02, -0.008], [0.05, -0.012], [0.12, -0.01], [0.168, -0.002], [0.174, 0.012], [0.166, 0.024], [0.11, 0.046], [0.04, 0.062], [-0.02, 0.066]];
-  add(planSlab(blade, -0.03, 0.03, 0.011), 'dark');
-  add(planSlab([[-0.02, -0.028], [0.058, -0.032], [0.084, 0.018], [0.066, 0.062], [0.018, 0.078], [-0.02, 0.066]], 0.012, 0.068, 0.014), 'white');
-  add(planSlab(serratedPad([[0.05, -0.012], [0.12, -0.01], [0.168, -0.004]], {n: 6, depth: 0.012, tooth: 0.004, dir: -1}), -0.036, 0.036, 0.003), 'orange');
+  // movable jaw: long black sickle whose sharp tip arcs in toward the fixed fang, orange serrated grip pad along the
+  // facing inner edge, white knuckle shell kept low over the root so the black hinge block reads above it
+  const blade = [[-0.02, 0.052], [0.04, 0.047], [0.1, 0.041], [0.15, 0.036], [0.18, 0.033], [0.186, 0.026], [0.18, 0.018], [0.15, 0.012], [0.1, 0.006], [0.05, -0.004], [-0.02, -0.012]];
+  add(planSlab(blade, -0.032, 0.032, 0.008), 'dark');
+  add(planSlab([[0.15, 0.03], [0.186, 0.029], [0.202, 0.026], [0.194, 0.021], [0.15, 0.015]], -0.011, 0.011, 0.002), 'dark'); // sharp sickle tip
+  add(planSlab([[-0.02, -0.026], [0.06, -0.03], [0.088, 0.018], [0.07, 0.062], [0.02, 0.074], [-0.02, 0.062]], 0.006, 0.07, 0.012), 'white');
+  add(planSlab(serratedPad([[0.05, -0.004], [0.1, 0.006], [0.15, 0.012], [0.19, 0.019]], {n: 8, depth: 0.011, tooth: 0.004, dir: -1, shift: 0.004}), -0.014, 0.014, 0.003), 'orange');
   return g;
 }
 
@@ -302,7 +328,7 @@ export function buildClaws(M) {
     const s = side > 0 ? '' : 'R';
     const [px, pz] = C.pivot;
     anchors[side > 0 ? 'clawL' : 'clawR'] = marker(B.yoke, 0, 0, 0.06);
-    anchors[`clawTip${s}`] = marker(B.finger, 0.16, 0, 0);
+    anchors[`clawTip${s}`] = marker(B.finger, 0.2, 0, 0.02);
     anchors[`clawScrew${s}`] = marker(B.chela, (C.screw[0] + C.screw[1]) / 2, C.screwY, pz + D.offset);
     anchors[`clawMotor${s}`] = marker(B.chela, (C.motor[0] + C.motor[1]) / 2, 0, pz + D.offset);
     anchors[`clawPivot${s}`] = marker(B.chela, px, 0.06, pz);

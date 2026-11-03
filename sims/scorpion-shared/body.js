@@ -239,13 +239,13 @@ export function buildBody(M) {
   // ~0.12-0.15 m drop at the flank edge) so it wraps down over the hips; the outline bows slightly at front/rear
   // a tergite shell: grid patch over the body's elliptical section (variable width and crown along x, drop to
   // the flank edge) with a 16 mm thickness, so it reads as a real armoured plate, not a ribbon
-  const shellGeo = (xf, xb, lift) => {
+  const shellGeo = (xf, xb, lift, hwInset = 0) => {
     const L = xf - xb;
     const NX = 14;
     const NZ = 20;
     const P = (u, v) => {
       const x = xb + u * L;
-      const hw = halfW(x) + 0.006;
+      const hw = halfW(x) + 0.006 - hwInset;
       const top = topY(x) + lift;
       const drop = topY(x) - edgeY(x) + 0.012;
       const z = v * hw;
@@ -295,102 +295,109 @@ export function buildBody(M) {
       g.computeVertexNormals();
     }
     const surfAt = (x, z) => {
-      const hw = halfW(x) + 0.006;
+      const hw = halfW(x) + 0.006 - hwInset;
       const u = (x - xb) / L;
       return topY(x) + lift - (topY(x) - edgeY(x) + 0.012) * (z / hw) ** 2 - 0.012 * Math.sin(Math.PI * u) ** 2;
     };
     return {g, surfAt, xf, xb};
   };
-  // the carapace: prosoma cowl + one continuous domed mesosoma shell, segmented by six seam lines with bolts and
-  // flank trim; the dark core shows only in the seams and in the gaps under the shell edges
+  // the carapace: a dark ribbed structural under-shell with seven raised white tergite plates bolted over it.
+  // Each plate is inset from the seams, so every seam shows a real stepped edge, the dark core and its exposed
+  // rib arcs / hydraulic line — the black skeleton reads between the white armour, like the reference.
   {
-    const cow = shellGeo(0.452, 0.330, 0.022);
-    a.add('ivory', cow.g);
-    const main = shellGeo(0.312, -0.512, 0.0);
-    a.add('white', main.g);
-    // plate seams: a dark groove plus a raised white lip on the rear side, so the shell reads as shingled tergites;
-    // two bolt rows alongside and an orange accent on alternating plates
-    for (let si = 0; si < 6; si++) {
-      const x = 0.321 - si * 0.140;
-      const hw = halfW(x) + 0.006;
-      for (let i = 0; i <= 22; i++) {
-        const z = -hw + (i / 22) * 2 * hw;
-        const y = main.surfAt(x, z);
-        const dz = (2 * (topY(x) - edgeY(x) + 0.012) * z) / (hw * hw);
-        const th = -Math.atan(dz);
-        const g = rbox(0.012, 0.003, 0.017, 0.0012);
-        g.rotateX(th);
-        g.translate(x, y + 0.0012, z);
-        a.add('dark', g);
-        const lip = rbox(0.02, 0.004, 0.017, 0.0015);
-        lip.rotateX(th);
-        lip.translate(x - 0.017, main.surfAt(x - 0.017, z) + 0.002, z);
-        a.add('white', lip);
-      }
-      for (const sx of [-1, 1]) {
-        for (let i = 1; i <= 9; i++) {
-          const z = -hw * 0.84 + (i / 10) * 1.68 * hw;
-          const xx = x + sx * 0.026;
-          const y = main.surfAt(xx, z);
-          a.hole([xx, y + 0.002, z], [0, 1, (2 * (topY(x) - edgeY(x) + 0.012) * z) / (hw * hw)], 0.0034);
+    const base = shellGeo(0.454, -0.514, 0.0, 0.0);
+    a.add('graphite', base.g);
+    const SEC = [
+      [0.452, 0.330, 'ivory', 0.020],
+      [0.312, 0.192, 'white', 0.017],
+      [0.176, 0.056, 'ivory', 0.014],
+      [0.040, -0.080, 'white', 0.011],
+      [-0.096, -0.216, 'ivory', 0.008],
+      [-0.232, -0.352, 'white', 0.006],
+      [-0.368, -0.488, 'ivory', 0.004],
+    ];
+    const plates = [];
+    for (let i = 0; i < SEC.length; i++) {
+      const [xf, xb, mat, lift] = SEC[i];
+      const p = shellGeo(xf - 0.008, xb + 0.008, lift, 0.011);
+      a.add(mat, p.g);
+      const hw = halfW((xf + xb) / 2) + 0.006 - 0.011;
+      plates.push({p, hw, xf, xb});
+      // three bolt rows on every plate (front / middle / rear), black, following the dome normal
+      for (const x of [xf - 0.026, (xf + xb) / 2, xb + 0.026]) {
+        const dzBase = topY(x) - edgeY(x) + 0.012;
+        const hwx = halfW(x) + 0.006 - 0.011;
+        for (let j = 0; j <= 7; j++) {
+          const z = -(hwx - 0.012) + (j / 7) * 2 * (hwx - 0.012);
+          const y = p.surfAt(x, z);
+          a.hole([x, y + 0.002, z], [0, 1, (2 * dzBase * z) / (hwx * hwx)], 0.0032);
         }
       }
-      if (si % 2 === 1) {
+      // service cover + vent slits on alternating plates
+      if (i % 2 === 1) {
+        const x = (xf + xb) / 2 + 0.02;
+        const z = hw * 0.3;
+        const y = p.surfAt(x, z);
+        const cov = rbox(0.055, 0.004, 0.05, 0.002);
+        cov.rotateX(-Math.atan((2 * (topY(x) - edgeY(x) + 0.012) * z) / (hw * hw)));
+        cov.translate(x, y + 0.002, z);
+        a.add('white', cov);
+        for (const dz of [-0.032, 0, 0.032]) for (const dx of [-0.024, 0.024]) a.hole([x + dx, y + 0.005, z + dz], [0, 1, 0], 0.0026);
+        const xv = (xf + xb) / 2 - 0.01;
+        for (let k = 0; k < 3; k++) {
+          const zv = -0.055 + k * 0.03;
+          const yv = p.surfAt(xv, zv);
+          a.add('dark', rbox(0.032, 0.005, 0.008, 0.001).translate(xv, yv - 0.001, zv));
+        }
+      }
+      // thin orange trim along the flank edge of alternating plates
+      if (i % 2 === 0) {
         for (const s of [1, -1]) {
-          const z = s * hw * 0.55;
-          const y = main.surfAt(x, z);
-          const g = rbox(0.05, 0.003, 0.012, 0.001);
-          g.rotateX(-Math.atan((2 * (topY(x) - edgeY(x) + 0.012) * z) / (hw * hw)));
-          g.translate(x - 0.05, y + 0.004, z);
-          a.add('orange', g);
+          for (const u of [0.2, 0.5, 0.8]) {
+            const x = xb + (xf - xb) * u;
+            const hwx = halfW(x) + 0.006 - 0.011;
+            const z = s * hwx * 0.9;
+            const y = p.surfAt(x, z);
+            const g = rbox(0.03, 0.003, 0.012, 0.001);
+            g.rotateX(-Math.atan((2 * (topY(x) - edgeY(x) + 0.012) * z) / (hwx * hwx)));
+            g.translate(x, y + 0.003, z);
+            a.add('orange', g);
+          }
         }
       }
-      // exposed dark rib tab under the shell edge on both flanks, and a second orange line lower down
+    }
+    // exposed rib frame in the seams: steel rib arch + copper hydraulic line + orange clamps, and on the flanks a
+    // hinge boss and a dark piston down to the side beam
+    for (const x of [0.321, 0.184, 0.048, -0.088, -0.224, -0.360, -0.499]) {
+      const hw = halfW(x) + 0.02;
+      const pts = [];
+      const pts2 = [];
+      for (let i = 0; i <= 18; i++) {
+        const z = -hw + (i / 18) * 2 * hw;
+        const y = base.surfAt(x, z) + 0.005;
+        pts.push([x, y, z]);
+        pts2.push([x, y + 0.01, z]);
+      }
+      a.add('steel', tubeGeo(pts, 0.0065, 6));
+      a.add('copper', tubeGeo(pts2, 0.0032, 6));
+      for (const u of [-0.55, 0, 0.55]) {
+        const z = u * hw;
+        const y = base.surfAt(x, z) + 0.014;
+        a.box('orange', 0.026, 0.011, 0.02, x, y, z, 0.002);
+        a.cyl('steel', 0.005, 0.016, x, y - 0.012, z, 'y', 12);
+      }
       for (const s of [1, -1]) {
-        a.box('dark', 0.018, 0.075, 0.02, x, 0.462, s * (halfW(x) + 0.014), 0.003);
-        a.box('steel', 0.02, 0.014, 0.022, x, 0.5, s * (halfW(x) + 0.016), 0.002);
-        const z2 = s * hw * 0.45;
-        const y2 = main.surfAt(x, z2);
-        const g2 = rbox(0.09, 0.0026, 0.01, 0.001);
-        g2.rotateX(-Math.atan((2 * (topY(x) - edgeY(x) + 0.012) * z2) / (hw * hw)));
-        g2.translate(x, y2 + 0.003, z2);
-        a.add('orange', g2);
+        const z = s * (halfW(x) + 0.016);
+        a.cyl('steel', 0.015, 0.036, x, edgeY(x) + 0.006, z, 'z', 20);
+        a.box('graphite', 0.024, 0.085, 0.028, x, 0.462, z, 0.004);
+        a.box('steel', 0.012, 0.02, 0.012, x, 0.5, z + s * 0.01, 0.002);
       }
     }
-    // a middle bolt row on every plate so the shell reads as bolted armour, not a smooth dome
-    for (let pi = 0; pi < 6; pi++) {
-      const x = 0.25 - pi * 0.14;
-      const hw = halfW(x) + 0.006;
-      for (let i = 0; i <= 6; i++) {
-        const z = -hw * 0.7 + (i / 6) * 1.4 * hw;
-        const y = main.surfAt(x, z);
-        a.hole([x, y + 0.002, z], [0, 1, (2 * (topY(x) - edgeY(x) + 0.012) * z) / (hw * hw)], 0.0032);
-      }
-    }
-    // orange trim along the flank edges
-    for (const s of [1, -1]) {
-      for (let i = 0; i < 10; i++) {
-        const x = 0.42 - i * 0.092;
-        const hw = halfW(x) + 0.006;
-        const z = s * hw * 0.9;
-        const y = main.surfAt(x, z);
-        const dz = (2 * (topY(x) - edgeY(x) + 0.012) * z) / (hw * hw);
-        const g = rbox(0.075, 0.0035, 0.012, 0.001);
-        g.rotateX(-Math.atan(dz));
-        g.translate(x, y + 0.003, z);
-        a.add('orange', g);
-      }
-    }
-    // crown spine: a raised white strip down the back
-    for (let i = 0; i < 12; i++) {
-      const x = 0.28 - i * 0.065;
-      const y = main.surfAt(x, 0);
-      a.add('ivory', rbox(0.045, 0.006, 0.05, 0.003).translate(x, y + 0.004, 0));
-    }
-    // few service covers on the shell
-    for (const [x, z] of [[-0.03, 0.11], [-0.03, -0.11], [-0.31, 0.12], [-0.31, -0.12]]) {
-      const y = main.surfAt(x, z);
-      a.add('white', rbox(0.06, 0.004, 0.05, 0.003).translate(x, y + 0.002, z));
+    // crown seam line: a thin dark spine groove down the middle of the carapace
+    for (let i = 0; i < 14; i++) {
+      const x = 0.44 - i * 0.068;
+      const y = base.surfAt(x, 0) + 0.004;
+      a.add('dark', rbox(0.05, 0.003, 0.012, 0.001).translate(x, y, 0));
     }
   }
   // glass canopy window set into the prosoma cowl, in a graphite frame with hinges
