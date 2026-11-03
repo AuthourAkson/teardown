@@ -42,9 +42,13 @@ function linkBody(M, k) {
   // the drum ahead, clamped in the link's far end; axis z
   const act = zActuator({...b, reducer: k < 4 ? 'harmonic' : 'planetary', M, x: len});
   g.add(act);
-  // the reference drum: wide orange outer ring round the rim and on both faces, dark face inside it
-  add(ring(b.r * 1.04, b.r * 0.97, b.len * 0.14, 44).rotateX(Math.PI / 2).translate(len, 0, 0), 'orange');
-  for (const s of [1, -1]) add(ring(b.r * 1.0, b.r * 0.7, 0.006, 44).rotateX(Math.PI / 2).translate(len, 0, s * (b.len / 2 + 0.002)), 'steel');
+  // the reference drum: wide orange rim bands at both edges of the housing, a black face inside them, a steel hub
+  // boss and the bolt circle (the official drum face reads black, not steel)
+  for (const s of [1, -1]) add(ring(b.r * 1.05, b.r * 0.955, b.len * 0.16, 44).rotateX(Math.PI / 2).translate(len, 0, s * b.len * 0.34), 'orange');
+  for (const s of [1, -1]) {
+    add(ring(b.r * 0.995, b.r * 0.26, 0.012, 44).rotateX(Math.PI / 2).translate(len, 0, s * (b.len / 2 + 0.01)), 'dark');
+    add(cyl(b.r * 0.22, 0.012, 28).rotateX(Math.PI / 2).translate(len, 0, s * (b.len / 2 + 0.021)), 'steel');
+  }
   // black skeleton spine between the drums
   const x0 = a.r * 0.75;
   const x1 = len - b.r * 0.85;
@@ -61,15 +65,17 @@ function linkBody(M, k) {
     const top = armorPanel(al - 0.01, 0.012, w * 0.86, {M, mat: 'white', seams: 1, bolts: true, arch: 0.006});
     top.position.set((x0 + x1) / 2, h / 2 + 0.002, 0);
     g.add(top);
+    // alternating sections carry a thin orange stripe on the outer flank (reference s001/s007)
+    if (k % 2 === 0) for (const s of [1, -1]) g.add(part(M, box(x0 - 0.004, x1 + 0.004, h * 0.2, h * 0.27, s * (w / 2 + 0.002) - 0.0025, s * (w / 2 + 0.002) + 0.0025, 0.001), 'orange'));
     add(box(x0, x1, -h / 2 - 0.006, -h * 0.32, -w * 0.28, w * 0.28, 0.003), 'graphite'); // belly plate
   }
-  // drum bolts round the outer rim of each face (the bolt circle the reference shows on every drum face)
+  // drum bolts round the rim of each black face (the bolt circle the reference shows on every drum face)
   const fb = [];
   for (const s of [1, -1]) for (let i = 0; i < 10; i++) {
     const t = (i / 10) * Math.PI * 2;
-    fb.push({p: [len + Math.cos(t) * b.r * 0.85, Math.sin(t) * b.r * 0.85, s * (b.len / 2 + 0.005)], n: [0, 0, s]});
+    fb.push({p: [len + Math.cos(t) * b.r * 0.78, Math.sin(t) * b.r * 0.78, s * (b.len / 2 + 0.017)], n: [0, 0, s]});
   }
-  g.add(bolts(fb, {M, r: Math.max(0.003, b.r * 0.055)}));
+  g.add(bolts(fb, {M, r: Math.max(0.0028, b.r * 0.045), head: true, mat: 'steel'}));
   return {g, act};
 }
 
@@ -118,7 +124,7 @@ function stingerBody(M) {
   // sensor bay: white bulb with an orange ring and a dark glass window band
   const bulb = new THREE.LatheGeometry([[0, 0], [0.036, 0.002], [0.052, 0.03], [0.056, 0.06], [0.05, 0.09], [0.036, 0.11], [0.026, 0.12]].map(([r, y]) => new THREE.Vector2(r, y)), 36);
   add(bulb.clone().rotateZ(-Math.PI / 2).translate(0.058, 0, 0), 'white');
-  add(ring(0.058, 0.04, 0.018, 40).rotateZ(-Math.PI / 2).translate(0.085, 0, 0), 'steel');
+  add(ring(0.058, 0.04, 0.018, 40).rotateZ(-Math.PI / 2).translate(0.085, 0, 0), 'orange');
   add(ring(0.0575, 0.045, 0.02, 40).rotateZ(-Math.PI / 2).translate(0.125, 0, 0), 'smoke');
   add(xcyl(0.02, 0.07, 0.15, 16), 'copper', {internal: true}); // sensor cartridge (probe / contact detector)
   add(xcyl(0.01, 0.06, 0.18, 10), 'steel', {internal: true}); // tip retaining rod
@@ -144,7 +150,7 @@ function stingerBody(M) {
   return g;
 }
 /** cable-carrier link: a small dark open box with side plates, frame x along the chain */
-const carrierGeo = () => box(-0.007, 0.007, -0.004, 0.004, -0.013, 0.013, 0.0015);
+const carrierGeo = () => box(-0.0055, 0.0055, -0.003, 0.003, -0.0095, 0.0095, 0.0012);
 
 // ------------------------------------------------------------ the builder
 /**

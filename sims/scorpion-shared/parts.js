@@ -51,13 +51,13 @@ export function makeMaterials() {
   const phys = (color, o = {}) => new THREE.MeshPhysicalMaterial({color, roughness: 0.48, metalness: 0, clearcoat: 0.3, clearcoatRoughness: 0.45, ...o});
   const std = (color, o = {}) => new THREE.MeshStandardMaterial({color, roughness: 0.5, metalness: 0.2, ...o});
   const M = {
-    ivory: phys('#f3f1eb', {roughness: 0.38}),
-    white: phys('#f6f5f1', {roughness: 0.35}),
-    // reference colour shares (show, cmp/report.txt): mid-grey frame, near-black only for rubber / needles / stinger
-    dark: std('#333740', {roughness: 0.5, metalness: 0.3, side: THREE.DoubleSide}),
-    graphite: std('#7c7f86', {roughness: 0.55, metalness: 0.4, envMapIntensity: 0.7}),
-    steel: std('#a2a7ae', {roughness: 0.42, metalness: 0.85, envMapIntensity: 0.6}),
-    alu: std('#c9ccd1', {roughness: 0.45, metalness: 0.7, envMapIntensity: 0.55}),
+    ivory: phys('#f1eee7', {roughness: 0.4}),
+    white: phys('#f7f6f2', {roughness: 0.36}),
+    // the reference language: near-white armour over a near-black frame, black joint drums with orange rims
+    dark: std('#232428', {roughness: 0.5, metalness: 0.3, side: THREE.DoubleSide}),
+    graphite: std('#3a3c42', {roughness: 0.55, metalness: 0.4, envMapIntensity: 0.65}),
+    steel: std('#9ba0a8', {roughness: 0.42, metalness: 0.85, envMapIntensity: 0.6}),
+    alu: std('#c4c8cd', {roughness: 0.45, metalness: 0.7, envMapIntensity: 0.55}),
     orange: std('#ee5a24', {roughness: 0.45, metalness: 0.05}),
     rubber: std('#18181a', {roughness: 0.9, metalness: 0}),
     glass: new THREE.MeshPhysicalMaterial({color: '#e8eef2', roughness: 0.06, metalness: 0, transparent: true, opacity: 0.22, depthWrite: false, side: THREE.DoubleSide, envMapIntensity: 1.4, clearcoat: 1}),
