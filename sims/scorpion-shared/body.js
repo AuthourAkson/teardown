@@ -239,10 +239,8 @@ export function buildBody(M) {
   // ~0.12-0.15 m drop at the flank edge) so it wraps down over the hips; the outline bows slightly at front/rear
   // a tergite shell: grid patch over the body's elliptical section (variable width and crown along x, drop to
   // the flank edge) with a 16 mm thickness, so it reads as a real armoured plate, not a ribbon
-  const shellGeo = (xf, xb, lift, hwInset = 0) => {
+  const shellGeo = (xf, xb, lift, hwInset = 0, v0 = -1, v1 = 1, NX = 14, NZ = 20) => {
     const L = xf - xb;
-    const NX = 14;
-    const NZ = 20;
     const P = (u, v) => {
       const x = xb + u * L;
       const hw = halfW(x) + 0.006 - hwInset;
@@ -255,7 +253,7 @@ export function buildBody(M) {
     const pos = [];
     const idx = [];
     const at = (ix, iz) => iz * (NX + 1) + ix;
-    for (let iz = 0; iz <= NZ; iz++) for (let ix = 0; ix <= NX; ix++) pos.push(...P(ix / NX, (iz / NZ) * 2 - 1));
+    for (let iz = 0; iz <= NZ; iz++) for (let ix = 0; ix <= NX; ix++) pos.push(...P(ix / NX, v0 + (iz / NZ) * (v1 - v0)));
     for (let iz = 0; iz < NZ; iz++) {
       for (let ix = 0; ix < NX; ix++) {
         const aa = at(ix, iz), bb = at(ix + 1, iz), cc = at(ix, iz + 1), dd = at(ix + 1, iz + 1);
@@ -305,22 +303,31 @@ export function buildBody(M) {
   // Each plate is inset from the seams, so every seam shows a real stepped edge, the dark core and its exposed
   // rib arcs / hydraulic line — the black skeleton reads between the white armour, like the reference.
   {
-    const base = shellGeo(0.454, -0.514, 0.0, 0.0);
-    a.add('graphite', base.g);
+    const base = shellGeo(0.454, -0.514, -0.006, 0.0);
+    a.add('dark', base.g);
     const SEC = [
-      [0.452, 0.330, 'ivory', 0.020],
-      [0.312, 0.192, 'white', 0.017],
-      [0.176, 0.056, 'ivory', 0.014],
-      [0.040, -0.080, 'white', 0.011],
-      [-0.096, -0.216, 'ivory', 0.008],
-      [-0.232, -0.352, 'white', 0.006],
-      [-0.368, -0.488, 'ivory', 0.004],
+      [0.446, 0.336, 'white', 0.020],
+      [0.306, 0.198, 'white', 0.017],
+      [0.170, 0.062, 'white', 0.014],
+      [0.034, -0.074, 'white', 0.011],
+      [-0.102, -0.210, 'white', 0.008],
+      [-0.238, -0.346, 'white', 0.006],
+      [-0.374, -0.482, 'white', 0.004],
     ];
     const plates = [];
     for (let i = 0; i < SEC.length; i++) {
       const [xf, xb, mat, lift] = SEC[i];
       const p = shellGeo(xf - 0.008, xb + 0.008, lift, 0.011);
-      a.add(mat, p.g);
+      // the reference tergite is a row of small rounded tiles with dark gaps: split the band into NT tiles across,
+      // each slightly crowned and inset, a few of them orange
+      const NT = 7;
+      const gap = 0.012;
+      for (let k = 0; k < NT; k++) {
+        const t0 = -1 + (2 * k) / NT + gap, t1 = -1 + (2 * (k + 1)) / NT - gap;
+        const tile = shellGeo(xf - 0.012, xb + 0.012, lift + 0.004, 0.011, t0, t1, 6, 4);
+        const orange = (i === 1 && (k === 2 || k === 6)) || (i === 3 && k === 4) || (i === 5 && (k === 1 || k === 7));
+        a.add(orange ? 'orange' : mat, tile.g);
+      }
       const hw = halfW((xf + xb) / 2) + 0.006 - 0.011;
       plates.push({p, hw, xf, xb});
       // three bolt rows on every plate (front / middle / rear), black, following the dome normal
@@ -383,13 +390,13 @@ export function buildBody(M) {
       for (const u of [-0.55, 0, 0.55]) {
         const z = u * hw;
         const y = base.surfAt(x, z) + 0.014;
-        a.box('orange', 0.026, 0.011, 0.02, x, y, z, 0.002);
+        a.box(u === 0 ? 'orange' : 'dark', 0.026, 0.011, 0.02, x, y, z, 0.002);
         a.cyl('steel', 0.005, 0.016, x, y - 0.012, z, 'y', 12);
       }
       for (const s of [1, -1]) {
         const z = s * (halfW(x) + 0.016);
         a.cyl('steel', 0.015, 0.036, x, edgeY(x) + 0.006, z, 'z', 20);
-        a.box('graphite', 0.024, 0.085, 0.028, x, 0.462, z, 0.004);
+        a.box('dark', 0.02, 0.06, 0.022, x, 0.468, z, 0.004);
         a.box('steel', 0.012, 0.02, 0.012, x, 0.5, z + s * 0.01, 0.002);
       }
     }
@@ -435,9 +442,11 @@ export function buildBody(M) {
   }
   // dark flank skirts below the side beams close the under-tray bays but stay clear of the eight hip pads
   for (const s of [1, -1]) {
-    a.box('dark', 0.64, 0.1, 0.012, -0.06, 0.326, s * 0.133, 0.005);
+    // white flank skirt split into tiles between the hips (reference: white plates run down the flanks)
+    for (const [x0, x1] of [[0.30, 0.17], [0.12, -0.02], [-0.07, -0.21], [-0.26, -0.38]]) a.box('white', x0 - x1, 0.1, 0.014, (x0 + x1) / 2, 0.33, s * 0.134, 0.012);
+    a.box('dark', 0.66, 0.08, 0.008, -0.06, 0.33, s * 0.128, 0.003);
     for (const x of [-0.34, -0.17, 0.0, 0.17, 0.3]) a.hole([x, 0.34, s * 0.1395], [0, 0, s], 0.004);
-    const hatch = armorPanel(0.15, 0.012, 0.05, {M, mat: 'dark', seams: [2, 1], bolts: true, radius: 0.004});
+    const hatch = armorPanel(0.15, 0.012, 0.05, {M, mat: 'ivory', seams: [2, 1], bolts: true, radius: 0.004});
     hatch.rotation.x = (s * Math.PI) / 2;
     hatch.position.set(-0.13, 0.328, s * 0.1405);
     a.obj(hatch);

@@ -12,7 +12,7 @@
 // (leg0) keeps its hip-pitch and knee actuators live so the jointCut window and the axial explode can open them.
 import * as THREE from 'three';
 import {mergeGeometries} from 'three/addons/utils/BufferGeometryUtils.js';
-import {actuator, armorPanel, bolts, boltCircle, rbox, ribbedLink, tag} from './parts.js';
+import {actuator, bolts, boltCircle, rbox, ribbedLink, tag} from './parts.js';
 import {LEG, LEGS} from './kin.js';
 
 const V3 = THREE.Vector3;
@@ -179,132 +179,207 @@ export function passiveDrum(M, r, len, x = 0, y = 0, z = 0) {
 }
 
 // ------------------------------------------------------------ legs: sizes (m)
+// Official look: slim white capsule links (oval section ~80 x 70 mm) between compact black drums (diameter ~1.25-1.35x
+// the link height) that carry a broad orange ring band, a dark face, a bolt circle and a steel hub; the tibia tapers
+// down to a black needle with a flared orange collar.
 export const LEGGEO = {
-  hipYaw: {r: 0.06, len: 0.104}, // vertical axis, on the hip mount
-  hipPitch: {r: 0.065, len: 0.118}, // at the coxa end, axis across the leg plane
-  knee: {r: 0.057, len: 0.112},
-  ankle: {r: 0.038, len: 0.084, at: LEG.tibia - 0.138}, // passive foot module along the tibia (m from the knee)
-  femur: {h: 0.094, w: 0.098},
-  tibia: {h: 0.082, w: 0.086},
-  needle: [LEG.tibia - 0.108, LEG.tibia - 0.012], // needle from / to (m from the knee); the ball joint at its tip
+  hipYaw: {r: 0.05, len: 0.09}, // vertical axis, on the hip mount
+  hipPitch: {r: 0.05, len: 0.096}, // at the coxa end, axis across the leg plane
+  knee: {r: 0.047, len: 0.09},
+  ankle: {r: 0.022, len: 0.04, at: 0.35}, // passive foot collar on the tibia (m from the knee): elastomer + load cell
+  femur: {h: 0.08, w: 0.07}, // capsule shell section (height y, width z)
+  tibia: {h: 0.072, w: 0.062, end: 0.05}, // section at the knee; tapers to end (height) at the collar
+  needle: [0.367, LEG.tibia - 0.004], // needle from / to (m from the knee); the rubber tip sits on the foot point
 };
 const G = LEGGEO;
-const t8 = 0.012; // fork plate thickness
 /** hip axis -> contact face of the hip pad on the side beam (m, inward); body.js puts the pad face there */
 export const MOUNT_BACK = 0.065;
 
-/** the static hip mount, frame: x outward, y up. Mounting flange + saddle + the hip-yaw actuator. */
+/** a lathed ring arc about +y (chamfered), phi range like THREE.LatheGeometry */
+const ringArc = (rO, rI, h, seg, phi0, phiL) => {
+  const c = Math.min(h * 0.18, (rO - rI) * 0.3);
+  const p = [[rI, -h / 2], [rO - c, -h / 2], [rO, -h / 2 + c], [rO, h / 2 - c], [rO - c, h / 2], [rI, h / 2], [rI, -h / 2]];
+  return new THREE.LatheGeometry(p.map(([a, b]) => new THREE.Vector2(a, b)), seg, phi0, phiL);
+};
+/**
+ * the reference drum's broad orange band, added to a parts.actuator() group (actuator frame, axis +y): split like the
+ * housing into a 270-degree body and a 90-degree window piece, the window piece joins act.cut so jointCut moves it too
+ */
+function drumBand(M, a, cutPhi) {
+  const {r, len} = a.act;
+  const w0 = cutPhi - Math.PI / 4;
+  const h = len * 0.22;
+  const y = len * 0.21;
+  const body = part(M, ringArc(r * 1.05, r * 0.96, h, 34, w0 + Math.PI / 2, Math.PI * 1.5).translate(0, y, 0), 'orange');
+  const win = part(M, ringArc(r * 1.05, r * 0.96, h, 12, w0, Math.PI / 2).translate(0, y, 0), 'orange');
+  win.userData.shell = 'cut';
+  win.userData.cutDir = [Math.sin(cutPhi), 0, Math.cos(cutPhi)];
+  a.add(body, win);
+  a.act.cut.push(win);
+  return a;
+}
+/** a joint drum laid along +z (output +z) with the broad orange band; window toward the link frame's +y */
+const zDrum = (o) => drumBand(o.M, zActuator(o), Math.PI);
+
+/**
+ * a smooth capsule shell along x: hemispherical nose radius r0 starting at x0, straight taper, cap radius r1 ending at
+ * x1; the section is an oval (height 2r, width 2r*sz). Returns {geo, R(x)} with R the local section half-height.
+ */
+function pod(x0, x1, r0, r1, sz, seg = 30) {
+  const c0 = x0 + r0;
+  const c1 = x1 - r1;
+  const p = [];
+  const N = 9;
+  for (let a = 0; a <= N; a++) {
+    const t = (a / N) * Math.PI / 2;
+    p.push(new THREE.Vector2(r0 * Math.sin(t), c0 - r0 * Math.cos(t)));
+  }
+  for (let a = 0; a <= N; a++) {
+    const t = Math.PI / 2 + (a / N) * Math.PI / 2;
+    p.push(new THREE.Vector2(Math.max(0, r1 * Math.sin(t)), c1 - r1 * Math.cos(t)));
+  }
+  const geo = new THREE.LatheGeometry(p, seg).rotateZ(-Math.PI / 2).scale(1, 1, sz);
+  const R = (x) => r0 + (r1 - r0) * Math.min(1, Math.max(0, (x - c0) / Math.max(1e-6, c1 - c0)));
+  return {geo, R};
+}
+/** a dark seam line round the capsule at x (oval section like pod) */
+const seamAt = (R, x, sz) => xcyl(R(x) + 0.0011, x - 0.0011, x + 0.0011, 32).scale(1, 1, sz);
+/** black bolt dots on the capsule surface: stations [x], angles [theta from +y toward +z] */
+function podDots(R, sz, xs, th, r = 0.0042) {
+  const list = [];
+  for (const x of xs)
+    for (const t of th) {
+      const c = Math.cos(t);
+      const s = Math.sin(t);
+      const n = new V3(0, c, s / sz).normalize();
+      list.push({p: [x, R(x) * c + n.y * 0.0004, R(x) * sz * s + n.z * 0.0004], n: n.toArray(), r});
+    }
+  return list;
+}
+/** a slim internal skeleton (ribbed graphite link + steel end blocks) inside a capsule, internal:true for x-ray */
+function skeleton(root, x0, len, h, w, M) {
+  const k = ribbedLink(len, h, w, {M, armor: false});
+  k.position.x = x0;
+  k.traverse((m) => m.isMesh && (m.userData.internal = true));
+  root.add(k);
+}
+const D = Math.PI / 180;
+
+/** the static hip mount, frame: x outward, y up. Mounting flange + saddle + the hip-yaw drum. */
 function tmplMount(M, feature) {
   const root = new THREE.Group();
-  const yaw = actuator({...G.hipYaw, reducer: 'harmonic', cutPhi: Math.PI / 2, M});
+  const yaw = drumBand(M, actuator({...G.hipYaw, reducer: 'harmonic', cutPhi: Math.PI / 2, M}), Math.PI / 2);
   root.add(yaw);
   const add = (g, mat, internal = false) => root.add(part(M, g, mat, {internal}));
   // mounting flange: a steel plate (contact face at x = -MOUNT_BACK) bolted to the side-beam hip pad, a graphite
-  // C-bracket with top and bottom arms out to the actuator (the yaw housing is clamped between them)
+  // back plate, and top / bottom arms that clamp the yaw housing
   const xb = -MOUNT_BACK;
-  add(rbox(0.012, 0.15, 0.11, 0.004).translate(xb + 0.006, 0, 0), 'steel');
-  add(boxFrom(xb + 0.012, -0.043, -0.06, 0.06, -0.04, 0.04), 'graphite');
+  add(rbox(0.012, 0.13, 0.1, 0.004).translate(xb + 0.006, 0, 0), 'steel');
+  add(boxFrom(xb + 0.012, -G.hipYaw.r + 0.002, -0.052, 0.052, -0.036, 0.036), 'graphite');
   const hb = [];
-  for (const yy of [-0.06, 0.06]) for (const zz of [-0.043, 0.043]) hb.push({p: [xb + 0.012, yy, zz], n: [1, 0, 0]});
-  root.add(bolts(hb, {r: 0.0055, mat: 'steel', head: true, M}));
+  for (const yy of [-0.052, 0.052]) for (const zz of [-0.038, 0.038]) hb.push({p: [xb + 0.012, yy, zz], n: [1, 0, 0]});
+  root.add(bolts(hb, {r: 0.005, mat: 'steel', head: true, M}));
   const yl = G.hipYaw.len / 2;
-  add(lever(xb + 0.012, 0.04, 0, G.hipYaw.r * 0.98, 0.012).rotateX(Math.PI / 2).translate(0, -yl - 0.007, 0), 'graphite'); // bottom arm
-  for (const s of [1, -1]) add(boxFrom(xb + 0.012, -0.012, -0.075, -yl - 0.012, s * 0.03 - 0.004, s * 0.03 + 0.004, 0.002), 'steel'); // gussets
+  add(lever(xb + 0.012, 0.036, 0, G.hipYaw.r * 0.98, 0.01).rotateX(Math.PI / 2).translate(0, -yl - 0.006, 0), 'graphite'); // bottom arm
+  for (const s of [1, -1]) add(boxFrom(xb + 0.012, -0.018, -0.062, -yl - 0.01, s * 0.026 - 0.0035, s * 0.026 + 0.0035, 0.002), 'graphite'); // gussets
   // hard-stop lugs (mechanical yaw limit) on the bottom arm
-  for (const s of [1, -1]) add(rbox(0.014, 0.018, 0.014, 0.003).translate(-0.02, -yl + 0.004, s * 0.046), 'steel');
+  for (const s of [1, -1]) add(rbox(0.012, 0.014, 0.012, 0.003).translate(-0.024, -yl + 0.002, s * 0.04), 'steel');
   return {root, feat: feature ? yaw : null};
 }
 
-/** the coxa, frame: x along the leg's yaw heading, y up, z across. Top plate on the yaw flange, web, hip-pitch can. */
+/** the coxa, frame: x along the leg's yaw heading, y up, z across. White top cap on the yaw flange, hip-pitch drum. */
 function tmplCoxa(M, feature) {
   const root = new THREE.Group();
   const add = (g, mat) => root.add(part(M, g, mat));
   const top = G.hipYaw.len / 2 + G.hipYaw.len * 0.085 + 0.006;
-  // top plate: bolted to the yaw output flange, runs out over the hip-pitch housing; a saddle clamps the housing
-  add(lever(0, G.hipYaw.r * 0.9, LEG.coxa, 0.042, 0.012).rotateX(Math.PI / 2).translate(0, top, 0), 'graphite');
-  add(boxFrom(LEG.coxa - 0.036, LEG.coxa + 0.036, G.hipPitch.r * 0.78, top, -0.042, 0.042), 'graphite');
-  add(boxFrom(LEG.coxa - 0.03, LEG.coxa + 0.03, top + 0.006, top + 0.016, -0.03, 0.03, 0.003), 'steel'); // clamp cap
-  root.add(bolts(boltCircleY(0.03, 6, top + 0.006), {r: 0.004, mat: 'steel', head: true, M}));
-  root.add(bolts([[LEG.coxa - 0.02, top + 0.016, -0.018], [LEG.coxa + 0.02, top + 0.016, -0.018], [LEG.coxa - 0.02, top + 0.016, 0.018], [LEG.coxa + 0.02, top + 0.016, 0.018]], {r: 0.0035, mat: 'dark', M}));
-  // the hip-pitch actuator, axis z, output +z; its window faces up
-  const hp = zActuator({...G.hipPitch, reducer: 'harmonic', M, x: LEG.coxa});
+  // top cap: a white rounded plate bolted to the yaw output flange, running out over the hip-pitch drum; a dark
+  // saddle under it clamps the drum housing
+  add(lever(0, G.hipYaw.r * 0.86, LEG.coxa, 0.036, 0.014).rotateX(Math.PI / 2).translate(0, top + 0.002, 0), 'white');
+  add(boxFrom(LEG.coxa - 0.03, LEG.coxa + 0.03, G.hipPitch.r * 0.8, top - 0.004, -0.036, 0.036, 0.006), 'graphite');
+  root.add(bolts(boltCircleY(0.03, 6, top + 0.0095), {r: 0.0036, mat: 'rubber', M}));
+  root.add(bolts([[LEG.coxa - 0.016, top + 0.0095, -0.016], [LEG.coxa - 0.016, top + 0.0095, 0.016]], {r: 0.0034, mat: 'rubber', M}));
+  // the hip-pitch drum, axis z, output +z; its window faces up
+  const hp = zDrum({...G.hipPitch, reducer: 'harmonic', M, x: LEG.coxa});
   hp.name = 'hipPitch';
   root.add(hp);
-  // bearing stub on the back face (the femur's second fork turns on it)
-  add(zcyl(0.02, 0.016, LEG.coxa, 0, -(G.hipPitch.len / 2 + 0.006), 24), 'steel');
+  // bearing stub on the back face (the femur turns on it)
+  add(zcyl(0.017, 0.012, LEG.coxa, 0, -(G.hipPitch.len / 2 + 0.005), 24), 'steel');
   return {root, feat: feature ? hp : null};
 }
 const boxFrom = (x0, x1, y0, y1, z0, z1, r = 0.004) => rbox(x1 - x0, y1 - y0, z1 - z0, r).translate((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
 const boltCircleY = (r, n, y) => boltCircle(r, n, y, Math.PI / n);
 
-/** two fork plates (z = ±zf) around a joint at the origin, joined by a spacer at x = xs; frame x along the link */
-function fork(add, r0, r1, x1, zf, h) {
-  // the plate bolts to the output flange only (r0 ~ flange), so the dark can and its orange ring stay visible
-  for (const s of [1, -1]) add(lever(0, r0 * 0.62, x1, r1 * 0.8, t8, s * zf), 'graphite');
-  add(boxFrom(x1 - 0.016, x1 + 0.012, -h * 0.4, h * 0.4, -zf, zf), 'graphite');
-}
-
-/** the femur, frame: origin at the hip-pitch axis, x toward the knee. Fork, ribbed armoured link, knee can. */
+/** the femur, frame: origin at the hip-pitch axis, x toward the knee. Output neck, white capsule shell, knee drum. */
 function tmplFemur(M, feature) {
   const root = new THREE.Group();
   const add = (g, mat) => root.add(part(M, g, mat));
   const {h, w} = G.femur;
-  const zf = G.hipPitch.len / 2 + G.hipPitch.len * 0.085 + t8 / 2 + 0.002;
-  fork(add, G.hipPitch.r * 0.82, h * 0.48, 0.09, zf, h);
-  const x0 = 0.1;
-  const x1 = LEG.femur - G.knee.r * 0.75;
-  const link = ribbedLink(x1 - x0, h, w, {mat: 'white', M});
-  link.position.x = x0;
-  root.add(link);
-  const pan = armorPanel(x1 - x0 - 0.03, 0.012, w * 0.92, {M, mat: 'white', seams: 2, bolts: true, arch: 0.004});
-  pan.position.set((x0 + x1) / 2 + 0.005, h / 2 + 0.004, 0);
-  root.add(pan);
-  const bot = armorPanel(x1 - x0 - 0.05, 0.01, w * 0.8, {M, mat: 'white', seams: 1, bolts: true});
-  bot.rotation.x = Math.PI;
-  bot.position.set((x0 + x1) / 2, -h / 2 - 0.003, 0);
-  root.add(bot);
-  // knee housing saddle: the link's end block wraps into the can
-  add(boxFrom(x1 - 0.02, x1 + 0.012, -h * 0.42, h * 0.42, -w * 0.47, w * 0.47), 'graphite');
-  const kn = zActuator({...G.knee, reducer: 'harmonic', M, x: LEG.femur});
+  const sz = w / h;
+  const rh = G.hipPitch.r;
+  const rk = G.knee.r;
+  const r0 = h / 2;
+  const x0 = rh * 0.86;
+  const x1 = LEG.femur - rk * 0.86;
+  const S = pod(x0, x1, r0, r0 * 0.93, sz);
+  add(S.geo, 'white');
+  // dark output necks: hip-pitch flange -> shell, shell -> knee housing
+  add(xcyl(0.023, rh * 0.62, x0 + r0 * 0.7, 24), 'graphite');
+  add(xcyl(0.021, x1 - r0 * 0.7, LEG.femur - rk * 0.62, 24), 'graphite');
+  // two thin seams split the shell into three plates; sparse black bolt dots next to the seams and the ends
+  const L = x1 - x0;
+  const s1 = x0 + L * 0.34;
+  const s2 = x0 + L * 0.68;
+  add(merge([seamAt(S.R, s1, sz), seamAt(S.R, s2, sz)]), 'dark');
+  root.add(bolts(podDots(S.R, sz, [x0 + r0 * 0.9, s1 + 0.016, s2 + 0.016, x1 - r0 * 0.9], [40 * D, -40 * D, 140 * D, -140 * D]), {M}));
+  skeleton(root, x0 + 0.02, L - 0.04, h * 0.5, w * 0.5, M);
+  const kn = zDrum({...G.knee, reducer: 'harmonic', M, x: LEG.femur});
   kn.name = 'knee';
   root.add(kn);
-  add(zcyl(0.018, 0.016, LEG.femur, 0, -(G.knee.len / 2 + 0.006), 24), 'steel');
+  add(zcyl(0.016, 0.012, LEG.femur, 0, -(G.knee.len / 2 + 0.005), 24), 'steel');
   return {root, feat: feature ? kn : null};
 }
 
-/** the tibia, frame: origin at the knee axis, x toward the foot. Fork, link, foot module, needle, ball. */
+/** the tibia, frame: origin at the knee axis, x toward the foot. Neck, tapered capsule, foot collar, needle. */
 function tmplTibia(M) {
   const root = new THREE.Group();
   const add = (g, mat, internal = false) => root.add(part(M, g, mat, {internal}));
-  const {h, w} = G.tibia;
-  const zf = G.knee.len / 2 + G.knee.len * 0.085 + t8 / 2 + 0.002;
-  fork(add, G.knee.r * 0.82, h * 0.5, 0.09, zf, h);
-  const x0 = 0.1;
-  const x1 = G.ankle.at - G.ankle.r * 0.6;
-  const link = ribbedLink(x1 - x0, h, w, {mat: 'white', M});
-  link.position.x = x0;
-  root.add(link);
-  const pan = armorPanel(x1 - x0 - 0.03, 0.012, w * 0.92, {M, mat: 'white', seams: 2, bolts: true, vents: {n: 3, len: 0.05, at: [-0.35, 0]}, arch: 0.004});
-  pan.position.set((x0 + x1) / 2, h / 2 + 0.004, 0);
-  root.add(pan);
-  // foot module: compliance drum with load cell, then the needle with its orange collar and the ball socket
+  const {h, w, end} = G.tibia;
+  const sz = w / h;
+  const rk = G.knee.r;
+  const r0 = h / 2;
+  const r1 = end / 2;
+  const x0 = rk * 0.86;
+  const x1 = G.ankle.at - 0.012;
+  const S = pod(x0, x1, r0, r1, sz);
+  add(S.geo, 'white');
+  add(xcyl(0.021, rk * 0.62, x0 + r0 * 0.7, 24), 'graphite');
+  const L = x1 - x0;
+  const s1 = x0 + L * 0.4;
+  add(seamAt(S.R, s1, sz), 'dark');
+  root.add(bolts(podDots(S.R, sz, [x0 + r0 * 0.9, s1 + 0.016, x1 - 0.075], [40 * D, -40 * D, 140 * D, -140 * D]), {M, r: 0.0038}));
+  // thin orange band near the lower end of the shell
+  const xb = x1 - 0.05;
+  add(xcyl(S.R(xb) + 0.0018, xb - 0.005, xb + 0.005, 32).scale(1, 1, sz), 'orange');
+  skeleton(root, x0 + 0.02, L - 0.06, h * 0.45, w * 0.45, M);
+  // foot module: a black collar (passive compliance: elastomer pack + load cell inside), a flared orange collar ring,
+  // then the long black needle
   const A = G.ankle;
-  root.add(passiveDrum(M, A.r, A.len, A.at, 0, 0));
-  add(xcyl(0.016, A.at + 0.01, G.needle[0] + 0.004, 20), 'graphite');
-  add(xcyl(0.023, G.needle[0] - 0.004, G.needle[0] + 0.01, 28), 'orange');
-  add(xcyl(0.019, G.needle[0] + 0.01, G.needle[1], 24, 0.0055), 'dark');
-  add(new THREE.SphereGeometry(0.0095, 16, 10).translate(G.needle[1] + 0.002, 0, 0), 'steel');
-  add(xcyl(0.004, A.at, G.needle[0], 8), 'copper', true); // sensor lead down to the pad
+  add(xcyl(A.r, x1 - 0.02, A.at + A.len / 2 - 0.012, 28, A.r * 0.88), 'dark');
+  add(xcyl(A.r * 0.92, G.needle[0] - 0.013, G.needle[0] - 0.001, 28, A.r * 1.2), 'orange');
+  add(xcyl(A.r * 1.2, G.needle[0] - 0.001, G.needle[0] + 0.003, 28, A.r * 0.9), 'dark');
+  add(xcyl(A.r * 0.86, G.needle[0] + 0.003, G.needle[1], 24, 0.0022), 'dark');
+  add(xcyl(A.r * 0.75, A.at - 0.012, A.at + 0.008, 20), 'rubber', true); // elastomer pack
+  add(xcyl(A.r * 0.6, A.at + 0.008, A.at + 0.014, 20), 'steel', true); // load cell
+  add(xcyl(0.003, x0 + 0.03, G.needle[0], 8), 'copper', true); // sensor lead down to the tip
   return {root, feat: null};
 }
 
-/** the foot pad, frame: origin on the foot point, y up, x along the leg heading. Stays level (passive pitch). */
+/** the foot tip, frame: origin on the foot point, y up, x along the leg heading. Rubber tip ball + pressure film. */
 function tmplPad(M) {
   const root = new THREE.Group();
   const add = (g, mat, internal = false) => root.add(part(M, g, mat, {internal}));
-  add(cyl(0.024, 0.009, 28, 0.021).translate(0, 0.0045, 0), 'rubber');
-  add(cyl(0.017, 0.007, 24, 0.012).translate(0, 0.012, 0), 'graphite');
-  add(cyl(0.014, 0.002, 20).translate(0, 0.006, 0), 'copper', true); // pressure sensor film
+  add(new THREE.SphereGeometry(0.0042, 14, 10).translate(0, 0.0042, 0), 'rubber');
+  add(cyl(0.0028, 0.0012, 12).translate(0, 0.0045, 0), 'copper', true); // pressure sensor film
   return {root, feat: null};
 }
 

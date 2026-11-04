@@ -24,17 +24,19 @@ export const BODY = {
 
 // ------------------------------------------------------------ legs: 4 pairs, coxa yaw + femur pitch + tibia pitch
 // hips along the flanks; the foot's neutral spot fans out like the TOP VIEW: front pair forward, back pair rearward
-// femur 0.40 / tibia 0.70: the knees arch to ~0.69 m standing (sheet front view ~0.74), feet stay where they were
-export const LEG = {coxa: 0.11, femur: 0.4, tibia: 0.7};
+// femur 0.36 / tibia 0.52: a crouched emperor-scorpion stance (official video) - knees arch just above the
+// carapace instead of standing up like a spider's
+export const LEG = {coxa: 0.11, femur: 0.36, tibia: 0.52};
 export const PAIRS = [
-  {x: 0.26, z: 0.21, yaw: 38},
-  {x: 0.09, z: 0.23, yaw: 12},
-  {x: -0.08, z: 0.23, yaw: -14},
-  {x: -0.25, z: 0.21, yaw: -40},
+  // emperor-scorpion splay (official video): front pair well forward, back pair well back, knees high and out
+  {x: 0.26, z: 0.21, yaw: 46},
+  {x: 0.09, z: 0.23, yaw: 15},
+  {x: -0.08, z: 0.23, yaw: -17},
+  {x: -0.25, z: 0.21, yaw: -45},
 ];
-// neutral foot distance from the hip, on the ground. 0.478 keeps the outermost foot module (its passive drum is 36 mm
-// across the leg) inside |z| = 0.765 m, so the 1530 mm overall width holds through the gait, the L1 lift and the turn.
-export const FOOT_R = 0.478;
+// neutral foot distance from the hip, on the ground. 0.5 plants the feet wide; with the outermost foot module (its
+// passive drum is 36 mm across the leg) the overall width stays ~1.52 m through the gait, the L1 lift and the turn.
+export const FOOT_R = 0.5;
 export const LEGS = []; // 0..7: L1 R1 L2 R2 ... (side +1 left, -1 right)
 PAIRS.forEach((p, i) => {
   for (const side of [1, -1]) {
@@ -284,7 +286,7 @@ export const CLAW = {
   shoulder: [BODY.front - 0.04, 0.44, 0.17], // left; mirrored in z for the right
   // arm + forearm + chela sized so the fully stretched, open claw stays inside the 2180 mm length (tip x <= 1.363)
   arm: 0.25,
-  fore: 0.25,
+  fore: 0.21, // 0.25 with the 1.1x chela overran the 2180 length at the front
   palm: 0.18,
   finger: 0.225,
   gapMax: 34, // degrees the movable finger opens
@@ -295,18 +297,18 @@ export const CLAW = {
 export function clawAt(side, open, reach = 0) {
   const [sx, sy, sz] = CLAW.shoulder;
   const S = [sx, sy, sz * side];
-  // the sheet's top view holds the big chelae wide (|z| 0.06..0.53 each) and low (shell ~0.15 m off the ground)
-  const yaw = (44 - 12 * reach) * D2R * side; // splay out from the midline
+  // emperor pose (official video): chelae raised and held forward in front of the head, wrist y ~0.5 m
+  const yaw = (30 - 6 * reach) * D2R * side; // splay out from the midline
   const ux = Math.cos(yaw);
   const uz = Math.sin(yaw);
-  const pa = (14 - 6 * reach) * D2R; // arm climbs from the shoulder
-  const pf = (-34 + 12 * reach) * D2R; // forearm runs down and forward
+  const pa = (20 - 6 * reach) * D2R; // arm (femur) climbs from the shoulder
+  const pf = (-6 + 2 * reach) * D2R; // patella runs level and forward: the chela is held up in front of the head
   const E = [S[0] + ux * CLAW.arm * Math.cos(pa), S[1] + CLAW.arm * Math.sin(pa), S[2] + uz * CLAW.arm * Math.cos(pa)];
-  const yaw2 = (-4 + 4 * reach) * D2R * side; // the forearm runs nearly straight ahead
+  const yaw2 = (-6 + 4 * reach) * D2R * side; // the forearm runs nearly straight ahead
   const vx = Math.cos(yaw2);
   const vz = Math.sin(yaw2);
   const W = [E[0] + vx * CLAW.fore * Math.cos(pf), E[1] + CLAW.fore * Math.sin(pf), E[2] + vz * CLAW.fore * Math.cos(pf)];
-  const yaw3 = (-12 + 6 * reach) * D2R * side;
+  const yaw3 = (-14 + 6 * reach) * D2R * side; // fingers forward and slightly inward
   const gap = CLAW.gapMax * open * D2R;
   // chela axis and the fixed finger tip (palm + 0.03 m hinge block + finger), as robot.js lays them out
   const dl = Math.hypot(1, 0.08);
