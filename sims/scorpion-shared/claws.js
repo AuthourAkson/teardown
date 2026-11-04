@@ -2,15 +2,14 @@
 // Rigid bodies per claw:
 //   base   claw-yaw actuator (vertical axis) on the front-frame flange, below the shoulder point S
 //   yoke   turns with the yaw output: base plate + cheek, carries the claw-pitch actuator centred on S (axis level)
-//   arm    S -> E: clevis on the pitch output, slim white capsule link (seams, black bolt dots, thin orange stripe)
+//   arm    S -> E: clevis on the pitch output, fork bridge, sculpted ivory shell over a graphite core
 //   elbow  drum at E, axis normal to the arm / forearm plane, broad orange band
-//   fore   E -> W: white capsule link between the elbow and wrist drums
+//   fore   E -> W: sculpted ivory shell between the elbow and wrist drums
 //   wrist  drum at W, axis normal to the forearm / chela plane
-//   chela  a large smooth white pod (four glossy segments over a dark liner, black bolt dots, thin orange bands) with a
-//          glass window on the top-outer side over the drive (PMSM motor -> planetary 10:1 -> Tr20x4 lead screw ->
-//          bronze nut on a guide rail -> push link -> crank pin on the movable finger, single pivot), a glass window
-//          on the inner side over a 4-gear train, black hinge drums with orange rings at the pivot, and a long curved
-//          black fixed finger with an orange serrated grip pad.
+//   chela  a big bulbous ivory palm (three panels, dark grooves) with a glass window in a smoke bezel over the drive
+//          (PMSM motor -> planetary 10:1 -> Tr20x4 lead screw -> bronze nut on a guide rail -> push link -> crank pin on
+//          the movable finger, single pivot), a gear train inside, a black hinge drum with an orange band at the pivot,
+//          a graphite jaw collar and a long curved black fixed finger with an orange serrated grip.
 //   nut, link, finger  the three moving parts of the drive, placed from the same nut / link / finger relation as
 //          kin.js clawDrive(), so the console's numbers and the parts agree.
 // Geometry is authored for the LEFT claw in the chela frame (x along kin `d`, y up, z outward); the right claw is a
@@ -26,8 +25,8 @@ export const CLAWGEO = {
   pitch: {r: 0.046, len: 0.09}, // base pitch can, centred on S
   elbow: {r: 0.045, len: 0.088},
   wrist: {r: 0.05, len: 0.1},
-  arm: {h: 0.078, w: 0.07}, // white capsule sections (height y, width z)
-  fore: {h: 0.084, w: 0.074},
+  arm: {h: 0.104, w: 0.09}, // sculpted ivory limb shells, peak section (height y, width z)
+  fore: {h: 0.106, w: 0.094},
   // the chela: ~0.40 m long (shell + fingers: x 0.06..0.44), ~0.19 m tall (y +-0.095), ~0.18 m across (z +-0.088).
   // The jaw hinge sits near the centreline (z -0.03); the lead screw runs at z = pivot.z + CLAW_DRIVE.offset = +0.05,
   // so the open bay on the outer half shows the screw / nut / link from above.
@@ -43,7 +42,7 @@ const D = CLAW_DRIVE;
 // the chela (palm + fingers) is the signature scorpion claw: the reference claws are visibly bigger than the kin grip
 // envelope, so the whole chela assembly is modelled 10% larger; the arm / forearm stay on the kin skeleton
 // (1.2 with the 0.25 m forearm put the closed tip at x 1474 mm, 67 mm past the 2180 length)
-const CH = 1.1;
+const CH = 1.2; // v9: large, threatening chelae
 const box = (x0, x1, y0, y1, z0, z1, r = 0.004) => rbox(x1 - x0, y1 - y0, z1 - z0, r).translate((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
 
 /** nut pin u (m, along the screw from the pivot) and link angle for finger opening gap, as kin.js clawDrive */
@@ -55,38 +54,81 @@ export function nutU(gap, ch = 1) {
   return {u, ang: Math.atan2(dv, px - u)};
 }
 
-// ------------------------------------------------------------ shell kit: smooth white pods (official look)
+// ------------------------------------------------------------ shell kit: soft superellipse shells (v9 look)
 const TAU = Math.PI * 2;
 const DEG = Math.PI / 180;
-/** a smooth capsule shell along x (hemispherical nose r0 at x0, taper, cap r1 at x1), oval section (width 2r*sz) */
-function podGeo(x0, x1, r0, r1, sz, seg = 30) {
-  const c0 = x0 + r0;
-  const c1 = x1 - r1;
-  const p = [];
-  const N = 9;
-  for (let i = 0; i <= N; i++) {
-    const t = ((i / N) * Math.PI) / 2;
-    p.push(new THREE.Vector2(r0 * Math.sin(t), c0 - r0 * Math.cos(t)));
-  }
-  for (let i = 0; i <= N; i++) {
-    const t = Math.PI / 2 + ((i / N) * Math.PI) / 2;
-    p.push(new THREE.Vector2(Math.max(0, r1 * Math.sin(t)), c1 - r1 * Math.cos(t)));
-  }
-  const geo = new THREE.LatheGeometry(p, seg).rotateZ(-Math.PI / 2).scale(1, 1, sz);
-  const R = (x) => r0 + (r1 - r0) * Math.min(1, Math.max(0, (x - c0) / Math.max(1e-6, c1 - c0)));
-  return {geo, R};
-}
-/** black bolt dots on an oval surface of half-height R(x), width ratio sz; angles from +y toward +z */
-function ovalDots(R, sz, xs, th, r = 0.004, yk = 1, zc = 0) {
-  const list = [];
-  for (const x of xs)
-    for (const t of th) {
-      const c = Math.cos(t);
-      const s = Math.sin(t);
-      const n = new V3(0, c / yk, s / sz).normalize();
-      list.push({p: [x, R(x) * yk * c + n.y * 0.0004, zc + R(x) * sz * s + n.z * 0.0004], n: n.toArray(), r});
+/** a section profile along x from stations [[x, halfHeight, halfWidth], ...] (cosine blend), exponent n */
+function stations(P, n = 2.6) {
+  return (x) => {
+    if (x <= P[0][0]) return {h: P[0][1], w: P[0][2], n};
+    for (let i = 0; i < P.length - 1; i++) {
+      const [x0, h0, w0] = P[i];
+      const [x1, h1, w1] = P[i + 1];
+      if (x <= x1) {
+        const t = (1 - Math.cos((Math.PI * (x - x0)) / (x1 - x0))) / 2;
+        return {h: h0 + (h1 - h0) * t, w: w0 + (w1 - w0) * t, n};
+      }
     }
-  return list;
+    const L = P[P.length - 1];
+    return {h: L[1], w: L[2], n};
+  };
+}
+/** superellipse section point [y, z] at angle phi (0 = +y top, 90 deg = +z outer), scale k */
+function sePt(s, phi, k = 1) {
+  const c = Math.cos(phi);
+  const sn = Math.sin(phi);
+  const e = 2 / s.n;
+  return [s.h * k * Math.sign(c) * Math.abs(c) ** e, s.w * k * Math.sign(sn) * Math.abs(sn) ** e];
+}
+/** a smooth shell piece over x0..x1, phi0..phi0+phiL of the section S(x), scale k. Indexed, smooth normals. */
+function seShell(S, x0, x1, phi0, phiL, k = 1, nx = 14, nphi = 40) {
+  const np = Math.max(2, Math.round((nphi * phiL) / TAU));
+  const pos = [];
+  const idx = [];
+  for (let i = 0; i <= nx; i++) {
+    const x = x0 + ((x1 - x0) * i) / nx;
+    const s = S(x);
+    for (let j = 0; j <= np; j++) {
+      const [y, z] = sePt(s, phi0 + (phiL * j) / np, k);
+      pos.push(x, y, z);
+    }
+  }
+  const W = np + 1;
+  for (let i = 0; i < nx; i++)
+    for (let j = 0; j < np; j++) {
+      const a = i * W + j;
+      // (i,j) -> (i,j+1) -> (i+1,j) faces outward (x cross phi-tangent points inward)
+      idx.push(a, a + 1, a + W, a + 1, a + W + 1, a + W);
+    }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setIndex(idx);
+  geo.computeVertexNormals();
+  return geo;
+}
+/** a flat end cap (fan) of the section at x, facing +x (front) or -x */
+function seCap(S, x, k = 1, front = true, n = 40) {
+  const s = S(x);
+  const pos = [x, 0, 0];
+  const idx = [];
+  for (let j = 0; j <= n; j++) {
+    const [y, z] = sePt(s, Math.PI + (TAU * j) / n, k);
+    pos.push(x, y, z);
+  }
+  for (let j = 1; j <= n; j++) front ? idx.push(0, j + 1, j) : idx.push(0, j, j + 1);
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setIndex(idx);
+  geo.computeVertexNormals();
+  return geo;
+}
+/** a bolt dot on the shell surface at (x, phi) */
+function seDot(S, x, phi, k = 1, r = 0.0038) {
+  const s = S(x);
+  const [y, z] = sePt(s, phi, k);
+  const [y1, z1] = sePt(s, phi + 0.002, k);
+  const n = new V3(0, z1 - z, -(y1 - y)).normalize();
+  return {p: [x, y + n.y * 0.0004, z + n.z * 0.0004], n: n.toArray(), r};
 }
 /** a lathed band about +y (orange joint ring); axis set by the caller */
 const band = (rO, rI, h, seg = 40, phi0 = 0, phiL = TAU) => {
@@ -168,49 +210,15 @@ function spurGear(r, teeth, t, x, y, z) {
 }
 
 // ------------------------------------------------------------ chela templates (chela frame, left claw)
-// Official chela (s001 / s005 / s013): a large smooth white pod, an elongated bulbous ellipsoid ~0.37 m long, built
-// from four glossy white shell segments (the 3 mm gaps read as dark seams over a dark liner), black bolt dots, thin
-// orange accent bands, a smoked-glass window on the top-outer side over the lead-screw drive and one on the inner side
-// over a 4-gear train, a black hinge drum with an orange ring at the finger pivot, and two long curved black fingers
-// with orange serrated grip pads that meet at the tips.
-const PALM = [[0.012, 0.046], [0.03, 0.072], [0.06, 0.088], [0.1, 0.097], [0.15, 0.1], [0.2, 0.098], [0.25, 0.09], [0.29, 0.076], [0.32, 0.06], [0.345, 0.038]];
-const PALM_Y = 0.86; // the pod is a little flatter than it is wide
-/** pod section radius (z half-width) at x, cosine blend between the stations */
-const palmR = (x) => {
-  const P = PALM;
-  if (x <= P[0][0]) return P[0][1];
-  for (let i = 0; i < P.length - 1; i++) {
-    const [x0, r0] = P[i];
-    const [x1, r1] = P[i + 1];
-    if (x <= x1) return r0 + ((r1 - r0) * (1 - Math.cos((Math.PI * (x - x0)) / (x1 - x0)))) / 2;
-  }
-  return P[P.length - 1][1];
-};
-/** a pod shell piece over x0..x1 at radius scale k, lathe angle phi0..phi0+phiL (phi 0 = +z, 270deg = +y) */
-function podPiece(x0, x1, k = 1, phi0 = 0, phiL = TAU, n = 10, seg = 48) {
-  const pts = [];
-  for (let i = 0; i <= n; i++) {
-    const x = x0 + ((x1 - x0) * i) / n;
-    pts.push(new THREE.Vector2(palmR(x) * k, x));
-  }
-  return new THREE.LatheGeometry(pts, Math.max(4, Math.round((seg * phiL) / TAU)), phi0, phiL).rotateZ(-Math.PI / 2).scale(1, PALM_Y, 1);
-}
-// shell segments (x0, x1) and their windows; TOP = top-outer window over the screw, INN = inner-side gear window
-const SEGS = [[0.012, 0.09], [0.093, 0.165], [0.168, 0.24], [0.243, 0.345]];
-const TOP = [265 * DEG, 80 * DEG];
-const INN = [150 * DEG, 60 * DEG];
-/** the solid angular spans of segment i: [[phi0, phiL], ...] */
-function spans(i) {
-  if (i === 0 || i === 3) return [[0, TAU]];
-  // windows: TOP 265..345, INN 150..210 -> solid 345..510 (=150+360) and 210..265
-  return [[TOP[0] + TOP[1], TAU - TOP[1] - INN[1] - (TOP[0] - INN[0] - INN[1])], [INN[0] + INN[1], TOP[0] - INN[0] - INN[1]]];
-}
-const podDotAt = (x, a) => {
-  // a: angle from +y toward +z on the oval pod surface
-  const r = palmR(x);
-  const n = new V3(0, Math.cos(a) / PALM_Y, Math.sin(a)).normalize();
-  return {p: [x, r * PALM_Y * Math.cos(a) + n.y * 0.0005, r * Math.sin(a) + n.z * 0.0005], n: n.toArray()};
-};
+// v9 chela: a big bulbous ivory palm (soft superellipse section, swelling to 0.21 x 0.24 m after CH), three shell
+// panels split by thin dark grooves over a graphite liner, a glass window with a smoke bezel on the top-outer
+// quarter over the lead-screw drive, a graphite jaw collar, a black hinge drum with an orange band at the finger
+// pivot, and two long curved black fingers with orange serrated grips.
+const PALM = stations([[0.012, 0.046, 0.05], [0.05, 0.072, 0.08], [0.1, 0.09, 0.102], [0.165, 0.096, 0.11], [0.235, 0.09, 0.102], [0.28, 0.077, 0.089], [0.312, 0.064, 0.076], [0.345, 0.052, 0.062]], 2.6);
+const SEG = [[0.012, 0.096], [0.099, 0.236], [0.239, 0.312]];
+const WINX = [0.102, 0.233];
+const WINP = [8 * DEG, 74 * DEG]; // phi0, phiL: the top-outer quarter, over the screw at z = +0.05
+const RING = [Math.PI, TAU];
 
 function chelaBody(M) {
   const g = new THREE.Group();
@@ -221,51 +229,57 @@ function chelaBody(M) {
   };
   const [px, pz] = C.pivot;
   const zs = pz + D.offset; // screw axis z
-  // ---- wrist: fork plates on the wrist can, dark neck, orange wrist ring at the pod root
+  // ---- wrist: fork plates on the wrist can, graphite neck, orange wrist ring at the palm root
   const fy = C.wrist.len / 2 + 0.012;
   for (const s of [1, -1]) add(lever(0, C.wrist.r * 0.5, 0.07, 0.034, 0.01).rotateX(Math.PI / 2).translate(0, s * fy, 0), 'graphite');
-  add(xcyl(0.05, 0.0, 0.03, 32), 'dark');
-  add(band(0.054, 0.044, 0.01, 40).rotateZ(Math.PI / 2).translate(0.022, 0, 0), 'orange');
-  // ---- the pod: four white segments, a dark liner just inside (seams + window interiors read dark), glass windows
-  SEGS.forEach(([x0, x1], i) => {
-    for (const [p0, pl] of spans(i)) {
-      add(podPiece(x0, x1, 1, p0, pl), 'white');
-      add(podPiece(x0 - 0.003, x1 + 0.003, 0.955, p0, pl), 'dark');
-    }
-  });
-  add(podPiece(SEGS[1][0], SEGS[2][1], 0.992, TOP[0], TOP[1], 14), 'glass'); // top window over the screw
-  add(podPiece(SEGS[1][0], SEGS[2][1], 0.992, INN[0], INN[1], 14), 'glass'); // inner window over the gear train
-  // window frames: thin dark lips along the window edges
-  for (const ph of [TOP[0], TOP[0] + TOP[1], INN[0], INN[0] + INN[1]]) add(podPiece(SEGS[1][0], SEGS[2][1], 1.004, ph - 1.2 * DEG, 2.4 * DEG, 14, 200), 'dark');
-  // thin orange accent bands on the outer flank of the rear and front segments, a longitudinal stripe under the window
-  add(podPiece(0.064, 0.071, 1.006, -40 * DEG, 80 * DEG, 2), 'orange');
-  add(podPiece(0.262, 0.269, 1.006, -40 * DEG, 80 * DEG, 2), 'orange');
-  add(podPiece(0.1, 0.235, 1.006, 352 * DEG, 5 * DEG, 12, 300), 'orange');
-  // black bolt dots near the seams
+  add(xcyl(0.05, 0.0, 0.03, 32), 'graphite');
+  add(band(0.055, 0.044, 0.012, 48).rotateZ(Math.PI / 2).translate(0.022, 0, 0), 'orange');
+  // ---- palm: ivory panels over a dark liner (the grooves and the window interior read dark)
+  const wEnd = WINP[0] + WINP[1];
+  const solidB = [wEnd, TAU - WINP[1]];
+  add(seShell(PALM, SEG[0][0], SEG[0][1], ...RING, 1, 10, 56), 'ivory');
+  add(seShell(PALM, SEG[1][0], SEG[1][1], ...solidB, 1, 16, 56), 'ivory');
+  add(seShell(PALM, SEG[2][0], SEG[2][1], ...RING, 1, 8, 56), 'ivory');
+  add(seShell(PALM, SEG[0][0] - 0.002, SEG[1][0] + 0.002, ...RING, 0.965, 6, 40), 'dark');
+  add(seShell(PALM, SEG[1][0], SEG[1][1], ...solidB, 0.965, 10, 40), 'dark');
+  add(seShell(PALM, SEG[1][1] - 0.002, SEG[2][1] + 0.003, ...RING, 0.965, 6, 40), 'dark');
+  add(seCap(PALM, SEG[0][0], 0.98, false), 'dark');
+  // window: ivory sill pieces fill the panel between the window and the grooves, glass pane, smoke bezel
+  add(seShell(PALM, SEG[1][0], WINX[0], WINP[0], WINP[1], 1, 1, 20), 'ivory');
+  add(seShell(PALM, WINX[1], SEG[1][1], WINP[0], WINP[1], 1, 1, 20), 'ivory');
+  add(seShell(PALM, WINX[0], WINX[1], ...WINP, 0.985, 12, 24), 'glass');
+  const bz = [];
+  for (const ph of [WINP[0], wEnd]) bz.push(seShell(PALM, WINX[0] - 0.004, WINX[1] + 0.004, ph - 2.2 * DEG, 4.4 * DEG, 1.006, 12, 120));
+  for (const x of WINX) bz.push(seShell(PALM, x - 0.004, x + 0.004, WINP[0] - 2.2 * DEG, WINP[1] + 4.4 * DEG, 1.006, 1, 40));
+  add(merge(bz), 'smoke');
+  // one short orange warning stripe on the outer flank of the rear panel, a dark groove along the lower flank
+  add(seShell(PALM, 0.032, 0.088, 100 * DEG, 9 * DEG, 1.005, 6, 200), 'orange');
+  add(seShell(PALM, 0.02, 0.305, 128 * DEG, 1.6 * DEG, 1.004, 20, 400), 'dark');
+  add(seShell(PALM, 0.02, 0.305, 232 * DEG, 1.6 * DEG, 1.004, 20, 400), 'dark');
+  // ---- bolt dots along the grooves (none on the window)
   const bl = [];
-  for (const x of [0.08, 0.103, 0.155, 0.178, 0.23, 0.253, 0.31])
-    for (const a of [-30, 30, 75, 120, 160, -120, -160]) {
-      const d = podDotAt(x, a * DEG);
-      // keep clear of the windows (top-outer 15..95 deg from +y toward +z on the window segments)
-      if (x > 0.093 && x < 0.24 && ((a > 10 && a < 100) || a === -120 || a === -160)) continue;
-      bl.push(d);
-    }
-  g.add(bolts(bl, {M, r: 0.0042}));
-  // front knuckle: dark rounded nose where the fingers leave the pod
-  add(new THREE.SphereGeometry(1, 28, 18).scale(0.03, 0.05, 0.05).translate(0.335, 0, -0.02), 'dark');
-  // ---- hinge: black drum caps with an orange ring and a steel hub on both faces of the pod at the finger pivot
-  const yh = palmR(px) * PALM_Y * Math.sqrt(Math.max(0, 1 - (pz / palmR(px)) ** 2));
+  for (const x of [0.088, 0.108, 0.226, 0.25, 0.3])
+    for (const a of [-40, -80, 110, 150, 210, 250, 300]) bl.push(seDot(PALM, x, a * DEG));
+  for (const a of [96, 112]) bl.push(seDot(PALM, 0.02, a * DEG));
+  g.add(bolts(bl, {M, r: 0.0038}));
+  // ---- jaw collar: graphite sleeve out of the front panel, dark front face where the fingers leave
+  add(seShell(PALM, SEG[2][1] - 0.006, 0.345, ...RING, 0.88, 4, 48), 'graphite');
+  add(seCap(PALM, 0.345, 0.88, true), 'graphite');
+  // ---- hinge: black drum caps with an orange band and a steel hub on both faces at the finger pivot
+  const yh = PALM(px).h;
   for (const s of [1, -1]) {
-    add(cyl(0.032, 0.02, 36).translate(px, s * (yh + 0.002), pz), 'dark');
-    add(band(0.0335, 0.03, 0.007, 40).translate(px, s * (yh + 0.003), pz), 'orange');
-    add(cyl(0.012, 0.006, 20).translate(px, s * (yh + 0.013), pz), 'steel');
+    add(cyl(0.046, 0.05, 44).translate(px, s * (yh - 0.012), pz), 'dark');
+    add(band(0.0478, 0.04, 0.012, 48).translate(px, s * (yh + 0.004), pz), 'orange');
+    add(cyl(0.028, 0.006, 36).translate(px, s * (yh + 0.016), pz), 'graphite');
+    add(cyl(0.012, 0.008, 20).translate(px, s * (yh + 0.02), pz), 'steel');
   }
-  g.add(bolts(boltCircle(0.022, 6, yh + 0.012, 0.3).map((b) => ({...b, p: [b.p[0] + px, b.p[1], b.p[2] + pz]})), {M, r: 0.0026, head: true, mat: 'steel'}));
+  g.add(bolts(boltCircle(0.036, 8, yh + 0.0132, 0.3).map((b) => ({...b, p: [b.p[0] + px, b.p[1], b.p[2] + pz]})), {M, r: 0.003, head: true, mat: 'steel'}));
   add(cyl(0.011, 2 * yh, 20).translate(px, 0, pz), 'steel', {internal: true}); // pivot pin
-  // ---- the fixed finger: long curved black finger, sweeping out then in to meet the movable tip, orange serrated pad
-  const F = taperTube([[0.27, -0.055], [0.335, -0.09], [0.4, -0.098], [0.448, -0.078], [0.476, -0.048]], (t) => 0.003 + 0.025 * Math.pow(1 - t, 0.8), 1.3);
+  // ---- the fixed finger: long curved black finger, out then in to meet the movable tip, orange serrated grip
+  const FX = [[0.29, -0.058], [0.355, -0.097], [0.425, -0.106], [0.486, -0.082], [0.526, -0.04]];
+  const F = taperTube(FX, (t) => 0.004 + 0.03 * Math.pow(1 - t, 0.75), 1.4, 32, 18);
   add(F.geo, 'dark');
-  add(gripPad(F, 1, 0.22, 0.86, 9), 'orange');
+  add(gripPad(F, 1, 0.16, 0.86, 10), 'orange');
   // ---- 4-gear train behind the inner window (motor pinion -> idlers -> screw spur), dark gears on steel shafts
   const gz = -0.072;
   [[0.112, 0.016, 12], [0.141, 0.013, 10], [0.168, 0.016, 12], [0.198, 0.013, 10]].forEach(([x, r, n], i) => {
@@ -312,18 +326,18 @@ function linkPart(M) {
   return g;
 }
 /** the movable finger, frame: origin on the pivot, x along the closed finger, rotates about y by -gap */
-const FINGER = [[0, 0.004], [0.06, 0.026], [0.12, 0.03], [0.17, 0.014], [0.205, -0.022]];
+const FINGER = [[0, 0.006], [0.068, 0.037], [0.14, 0.045], [0.2, 0.023], [0.246, -0.014]];
 function fingerPart(M) {
   const g = new THREE.Group();
   const add = (geo, mat, ud) => g.add(part(M, geo, mat, ud));
   // crank plate from the pivot to the crank pin (on the drive side, at the link height)
   add(lever(0, 0.022, D.crank, 0.014, 0.012).rotateX(Math.PI / 2).rotateY(-Math.PI / 2).translate(0, C.linkY, 0), 'graphite');
   add(cyl(0.024, 0.04, 28), 'steel'); // hub ring on the pivot
-  // long curved black finger, thick at the root, arcing in to a sharp tip that meets the fixed finger's tip
-  const F = taperTube(FINGER, (t) => 0.003 + 0.023 * Math.pow(1 - t, 0.75), 1.3);
+  // long curved black finger, deep at the root, arcing in to a point that meets the fixed finger's tip
+  const F = taperTube(FINGER, (t) => 0.004 + 0.029 * Math.pow(1 - t, 0.75), 1.4, 32, 18);
   add(F.geo, 'dark');
-  add(new THREE.SphereGeometry(1, 24, 16).scale(0.032, 0.038, 0.032).translate(0.006, 0, 0.004), 'dark'); // root knuckle
-  add(gripPad(F, -1, 0.24, 0.86, 8), 'orange');
+  add(new THREE.SphereGeometry(1, 28, 18).scale(0.038, 0.046, 0.038).translate(0.008, 0, 0.006), 'dark'); // root knuckle
+  add(gripPad(F, -1, 0.18, 0.86, 9), 'orange');
   return g;
 }
 
@@ -352,37 +366,41 @@ function yokePart(M, feature) {
   g.add(part(M, zcyl(0.02, 0.014, 0, 0, -(C.pitch.len / 2 + 0.006), 24), 'steel'));
   return {root: g, feat: feature ? p : null};
 }
-/** fork + smooth white capsule link from a joint at the origin to x = len; frame z = the root joint axis */
-function linkBody(M, len, sz, rootAct, endR, stripe) {
+/** fork + sculpted ivory shell link from a joint at the origin to x = len; frame z = the root joint axis */
+function linkBody(M, len, sz, rootAct, endR) {
   const g = new THREE.Group();
   const add = (geo, mat, ud) => g.add(part(M, geo, mat, ud));
-  const {h, w} = sz;
+  const {h} = sz;
   const zf = rootAct.len / 2 + rootAct.len * 0.085 + 0.007;
-  for (const s of [1, -1]) add(lever(0, rootAct.r * 0.5, 0.085, h * 0.36, 0.01).translate(0, 0, s * zf), 'graphite');
-  add(xcyl(0.024, 0.07, 0.1, 24), 'graphite'); // output neck into the shell
-  capsule(g, M, 0.085, len - endR * 0.86, h, w, stripe);
+  for (const s of [1, -1]) add(lever(0, rootAct.r * 0.5, 0.085, h * 0.34, 0.01).translate(0, 0, s * zf), 'graphite');
+  add(rbox(0.032, h * 0.5, 2 * zf + 0.01, 0.006).translate(0.084, 0, 0), 'graphite'); // fork bridge
+  add(xcyl(0.024, 0.06, 0.11, 24), 'graphite'); // output neck into the shell
+  limbShell(g, M, 0.098, len - endR * 0.86, sz);
   return g;
 }
-/** white capsule shell x0..x1 (section h x w) with 2 seams, black bolt dots, an orange stripe, internal skeleton */
-function capsule(g, M, x0, x1, h, w, stripe = true) {
+/** sculpted ivory limb shell x0..x1 (peak section h x w, fuller toward the root), one groove, bolt dots, graphite core */
+function limbShell(g, M, x0, x1, {h, w}) {
   const add = (geo, mat, ud) => g.add(part(M, geo, mat, ud));
-  const sz = w / h;
-  const r0 = h / 2;
-  const S = podGeo(x0, x1, r0, r0 * 0.9, sz);
-  add(S.geo, 'white');
   const L = x1 - x0;
-  const s1 = x0 + L * 0.34;
-  const s2 = x0 + L * 0.68;
-  const seam = (x) => xcyl(S.R(x) + 0.0011, x - 0.0011, x + 0.0011, 32).scale(1, 1, sz);
-  add(merge([seam(s1), seam(s2)]), 'dark');
-  if (stripe) add(band(S.R(s1 + 0.03) + 0.0014, S.R(s1 + 0.03) - 0.002, 0.006, 32).rotateZ(Math.PI / 2).scale(1, 1, sz).translate(s1 + 0.03, 0, 0), 'orange');
-  g.add(bolts(ovalDots(S.R, sz, [x0 + r0 * 0.9, s1 + 0.014, s2 + 0.014, x1 - r0 * 0.9], [40 * DEG, -40 * DEG, 140 * DEG, -140 * DEG]), {M}));
-  add(rbox(L - 0.04, h * 0.45, w * 0.45, 0.004).translate((x0 + x1) / 2, 0, 0), 'graphite', {internal: true}); // skeleton
+  const S = stations([[x0, h * 0.36, w * 0.36], [x0 + L * 0.18, h * 0.5, w * 0.5], [x0 + L * 0.45, h * 0.52, w * 0.5], [x0 + L * 0.85, h * 0.43, w * 0.42], [x1, h * 0.36, w * 0.36]], 2.5);
+  const sA = x0 + L * 0.58;
+  add(seShell(S, x0, sA - 0.0015, ...RING, 1, 14, 48), 'ivory');
+  add(seShell(S, sA + 0.0015, x1, ...RING, 1, 10, 48), 'ivory');
+  add(seShell(S, sA - 0.004, sA + 0.004, ...RING, 0.96, 1, 40), 'dark');
+  add(seCap(S, x0, 1, false), 'graphite');
+  add(seCap(S, x1, 1, true), 'graphite');
+  // dark groove along both flanks
+  for (const ph of [80, 280]) add(seShell(S, x0 + 0.012, x1 - 0.012, ph * DEG, 1.6 * DEG, 1.004, 14, 400), 'dark');
+  const dots = [];
+  for (const x of [sA - 0.012, sA + 0.012]) for (const a of [-50, 50, 130, 230]) dots.push(seDot(S, x, a * DEG, 1, 0.0034));
+  for (const a of [-30, 30]) dots.push(seDot(S, x0 + 0.012, a * DEG, 1, 0.0034));
+  g.add(bolts(dots, {M, r: 0.0034}));
+  add(rbox(L - 0.02, h * 0.42, w * 0.42, 0.004).translate((x0 + x1) / 2, 0, 0), 'graphite', {internal: true}); // core beam
 }
 /** a broad orange band round a y-axis joint drum (elbow / wrist), placed at x */
 const drumRing = (a, x = 0) => band(a.r * 1.05, a.r * 0.96, a.len * 0.3, 40).translate(x, a.len * 0.17, 0);
 /** arm: S -> E, frame origin S, z = pitch axis; the elbow can is part of the forearm */
-const armPart = (M) => linkBody(M, CLAW.arm, C.arm, C.pitch, C.elbow.r, true);
+const armPart = (M) => linkBody(M, CLAW.arm, C.arm, C.pitch, C.elbow.r);
 /** forearm: E -> W, frame origin E, y up-ish; carries the elbow can (axis y at its origin) and the wrist can at W */
 function forePart(M) {
   const g = new THREE.Group();
@@ -393,7 +411,7 @@ function forePart(M) {
   const x1 = CLAW.fore - C.wrist.r * 0.8;
   g.add(part(M, xcyl(0.022, C.elbow.r * 0.6, x0 + 0.02, 24), 'graphite'));
   g.add(part(M, xcyl(0.022, x1 - 0.02, CLAW.fore - C.wrist.r * 0.6, 24), 'graphite'));
-  capsule(g, M, x0, x1, C.fore.h, C.fore.w, true);
+  limbShell(g, M, x0, x1, C.fore);
   const wr = actuator({...C.wrist, reducer: 'planetary', M});
   wr.position.x = CLAW.fore;
   g.add(wr);

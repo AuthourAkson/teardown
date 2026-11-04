@@ -15,28 +15,30 @@ export const D2R = Math.PI / 180;
 
 // ------------------------------------------------------------ body
 export const BODY = {
-  ride: 0.42, // hip-line height over the ground at rest
-  len: 1.02, // prosoma + mesosoma, front plate to tail root
-  front: 0.5, // x of the front plate
-  back: -0.52, // x of the tail root
-  half: 0.24, // half width of the carapace at the hips
+  // v9 original redesign (DESIGN-V9.md): tapered teardrop body, wide at the shoulders
+  ride: 0.40, // hip-line height over the ground at rest
+  len: 0.95, // prosoma + mesosoma, front plate to tail root
+  front: 0.47, // x of the front plate
+  back: -0.48, // x of the tail root
+  half: 0.30, // half width of the carapace at the hips (shell max half width ~0.31)
 };
 
 // ------------------------------------------------------------ legs: 4 pairs, coxa yaw + femur pitch + tibia pitch
 // hips along the flanks; the foot's neutral spot fans out like the TOP VIEW: front pair forward, back pair rearward
 // femur 0.36 / tibia 0.52: a crouched emperor-scorpion stance (official video) - knees arch just above the
 // carapace instead of standing up like a spider's
-export const LEG = {coxa: 0.11, femur: 0.36, tibia: 0.52};
+// official side view (s003): femur climbs steeply, knee drums stand well above the carapace, tibia drops near vertical
+export const LEG = {coxa: 0.11, femur: 0.40, tibia: 0.62}; // v9: knees ~0.15 above the carapace edge
 export const PAIRS = [
-  // emperor-scorpion splay (official video): front pair well forward, back pair well back, knees high and out
-  {x: 0.26, z: 0.21, yaw: 46},
-  {x: 0.09, z: 0.23, yaw: 15},
-  {x: -0.08, z: 0.23, yaw: -17},
-  {x: -0.25, z: 0.21, yaw: -45},
+  // v9: front pair sweeps forward, rear pair sweeps back, hips follow the teardrop flank
+  {x: 0.28, z: 0.27, yaw: 52},
+  {x: 0.105, z: 0.29, yaw: 20},
+  {x: -0.07, z: 0.285, yaw: -14},
+  {x: -0.245, z: 0.25, yaw: -44},
 ];
 // neutral foot distance from the hip, on the ground. 0.5 plants the feet wide; with the outermost foot module (its
 // passive drum is 36 mm across the leg) the overall width stays ~1.52 m through the gait, the L1 lift and the turn.
-export const FOOT_R = 0.5;
+export const FOOT_R = 0.6; // v9 stance radius
 export const LEGS = []; // 0..7: L1 R1 L2 R2 ... (side +1 left, -1 right)
 PAIRS.forEach((p, i) => {
   for (const side of [1, -1]) {
@@ -199,24 +201,23 @@ export function legsAt(PHI, lift = 0, settle = 0) {
 // The root mount is a fixed bracket bolted to the rear frame; it carries both J1 actuators.
 export const TAIL = {
   // J1 sits 20 mm inside the rear frame (BODY.back = -0.52) on top of the root mount bracket
-  root: [BODY.back + 0.02, 0.49], // x, y of J1
-  seg: [0.18, 0.18, 0.17, 0.16, 0.155, 0.145, 0.135], // links 1-6 + end-effector mount (m)
-  sting: 0.27, // stinger module, J8 to the tip (m)
-  // rest pitch of each joint (relative bend, degrees): the tail rises behind and curls forward over the back.
-  // the rear-most section stays 781 mm behind the hips through the wind-up, so the 2180 mm length holds; the top of
-  // the curl stays under the 1280 mm height (1267 mm at the wind-up).
-  // rounder, higher curl: reaches back to x -0.74 with the stinger hanging over the back at y ~0.83 (sheet side view)
-  rest: [125, -20, -23, -26, -30, -32, -34, -46],
-  // strike: every joint bends further toward the front, the stinger drives down at the target
-  // the struck tip ends at (0.245, 0.703) m, above the head armour (top ~0.59 m)
-  strike: [-18, -4, -2, -1, 1, 2, 4, 60],
+  root: [BODY.back + 0.02, 0.49], // follows BODY.back // x, y of J1
+  // official demo (s001 / s003 / side1 / head3): a THICK chain (section about as tall as the body) rising straight up
+  // from the rear and curling in a big high loop over the back; the stinger hangs forward / down over the mid body.
+  seg: [0.23, 0.23, 0.225, 0.22, 0.215, 0.205, 0.19], // links 1-6 + end-effector mount (m) (wider arch per 图二)
+  sting: 0.44, // stinger module, J8 to the needle tip (m): bulb + glow cone + long straight blade
+  // rest pitch of each joint (relative bend, degrees): J1 stands the chain up, J4..J5 roll it over the top, the stinger
+  // hangs down in front of the loop. Loop top ~1.41 m, rear-most point x ~-0.56, needle tip ~(0.32, 0.68).
+  rest: [103, -11, -26, -22, -30, -24, -36, -40], // v9: classic scorpion S-curve, apex ~1.35 m over mid-body, aculeus down at (0.30, 0.74)
+  // strike: every joint bends further toward the front, the stinger drives down and forward
+  strike: [0, -8, 0, 0, -1, 5, 6, 33], // v9: aculeus drives forward to (0.64, 0.76), >= 39 mm clear
   // stow: flatter, lower curl for the low walk (J1 drops, the curl closes)
-  stow: [-6, 0, 2, 2, 0, -2, -4, 0],
+  stow: [-6, 0, 2, 2, 0, -2, -4, 12], // stinger lifts in stow to clear the carapace
   names: ['尾根连接座', '第一节尾部连杆', '第二节尾部连杆', '第三节尾部连杆', '第四节尾部连杆', '第五节尾部连杆', '第六节尾部连杆', '末端执行器安装节', '尾刺执行模块'],
   en: ['ROOT MOUNT', 'LINK 1', 'LINK 2', 'LINK 3', 'LINK 4', 'LINK 5', 'LINK 6', 'END MOUNT', 'STINGER'],
   // section envelope (m), root largest, tapering to the tip: width across (z), height in the tail plane
-  width: [0.22, 0.18, 0.168, 0.155, 0.14, 0.125, 0.11, 0.095, 0.08],
-  height: [0.24, 0.21, 0.2, 0.185, 0.17, 0.15, 0.13, 0.11, 0.088],
+  width: [0.26, 0.24, 0.23, 0.22, 0.21, 0.2, 0.19, 0.18, 0.13],
+  height: [0.28, 0.26, 0.25, 0.24, 0.23, 0.22, 0.21, 0.2, 0.13],
   // structural mass of each section (armour + link + flange), kg, at its mid point
   link: [5.0, 6.4, 5.6, 4.8, 4.0, 3.3, 2.7, 2.2, 3.0],
   // actuator mass carried by each section, kg: section 0 holds J1 yaw + pitch; section k (1..7) holds the actuator
@@ -289,7 +290,7 @@ export const CLAW = {
   fore: 0.21, // 0.25 with the 1.1x chela overran the 2180 length at the front
   palm: 0.18,
   finger: 0.225,
-  gapMax: 34, // degrees the movable finger opens
+  gapMax: 60, // degrees the movable finger opens (official full45: the jaws spread ~60 deg)
   gripMax: 6.2, // kN at full close, the panel's GRIP FORCE scale
 };
 

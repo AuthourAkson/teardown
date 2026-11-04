@@ -1,37 +1,32 @@
-// SCORPION SC-8, the central body (spec §2, §6, §7.1): the load-bearing frame, the five bays and their modules, the
-// sensor head, the harness and the three-layer armour. Built from code in metres, body frame (x forward, y up, z left),
-// every interface number read from kin.js so the limbs bolt on where the math puts them:
-//   frame    central spine beam (box section, lightening holes) on posts over four cross beams, two side beams with
-//            eight steel hip pads (outer face |hip.z| - 0.065), a front frame with two claw outriggers and their
-//            yaw flanges (top at CLAW.shoulder.y - 0.14), a rear frame with the tail deck, gussets and the J1
-//            turntable flange (top at TAIL.root.y - 0.15), the equipment tray hung under the side beams
-//   bays     power (8 battery modules, BMS, busbars) on the tray, PDU (contactors, fuse, pre-charge, DC bus, isolated
-//            aux supply) behind it, thermal (pump, reservoir, radiator, fans, cold plates, copper loop), drive (servo
-//            drive cards on a cold plate, aux controller, leg connectors), control (computer, motion controller,
-//            comms) under the glass canopy, sensor bay (IMU on isolators, positioning module, perception unit)
-//   head     sensor head between the claw bases: stereo pair, depth camera, lidar puck, IR module, lamps, smoked glass
-//   armour   layer 1 white tergite plates / glass canopy / belly / rear quarters (seams, bolt holes, vents, service
-//            covers), layer 2 rubber isolators on standoffs, layer 3 the armour hoops on the frame
-// Static parts are merged per material inside each explode unit, so the whole body is a few hundred draw calls.
+// SCORPION SC-8 v9, the central body: load frame, five bay modules, sensor head and the armour, built in metres in
+// the body frame (x forward, y up, z left); every interface number comes from kin.js.
+// Silhouette: a teardrop in plan (widest at the shoulders, narrowing to the tail root). One sculpted prosoma shield
+// (head + front legs) with a smoke-glass canopy, then six cambered tergite plates shrinking toward the rear; graphite
+// hoops and a thin orange seam band show in the 12 mm gaps. Every shell is split into flank / dorsal / flank panels by
+// thin grooves over a dark under-shell, with carina ridges. Faceted ivory sensor head with lamp eyes (median pair +
+// lateral rows) and black chelicerae; ivory sternum plates under the belly; flank skirts hide the hip brackets.
+//   chassis  spine beam, two side rails at the hip line, eight hip brackets + steel pads (outer face |hip.z| - 0.065),
+//            cross ties, tray, shell standoffs, front frame with the two claw-yaw flanges (top CLAW.shoulder.y - 0.14)
+//            and the head post, rear frame + deck with the tail J1 turntable flange (top TAIL.root.y - 0.15), bulkhead
+//   bays     power (8 battery modules, BMS, busbars) on the tray; thermal (cold plate, pump, reservoir, radiator, fans,
+//            copper loop); drive (8 servo cards on a cold plate, PDU, leg connector panel); control (computer, motion
+//            controller, comms, IMU on isolators) under the canopy; sensor bay (perception unit) behind the head
+// Clearances: armour above y 0.43 ends at x >= -0.29 (tail J1 sweep), shell rim over the hips at y >= 0.49, shield rim
+// near the claw shoulders at y >= 0.505, head half width <= 0.095, crown < 0.64 (< 0.62 at x < -0.3).
+// Static parts are merged per material inside each explode unit.
 import * as THREE from 'three';
+import {ConvexGeometry} from 'three/addons/geometries/ConvexGeometry.js';
 import {BODY, CLAW, LEGS, TAIL} from './kin.js';
-import {armorPanel, bolts, boltCircle, cable, grille, merge, mesh, rbox, tag} from './parts.js';
+import {bolts, cable, merge, mesh, rbox, tag} from './parts.js';
 
 const V3 = THREE.Vector3;
-const R = BODY.ride; // 0.42, hip line
+const PI = Math.PI;
+const R = BODY.ride; // hip line
 const PAD_BACK = 0.065; // hip pad outer face sits this far inside the hip point (legs.js MOUNT_BACK)
-const BEAM_Z = 0.115; // side beam centre line
 const BEAM_W = 0.04;
 const BEAM_H = 0.09;
-const TRAY_Y = 0.268; // tray plate centre
-const DECK_Y = 0.437; // mid deck plates on the cross beams
-const SPINE_Y = 0.5125; // central beam centre (0.49..0.535)
-const FRONT_X = 0.43; // front frame
-const REAR_X = -0.4; // rear frame
-const CROSS_X = [0.34, 0.115, -0.12, -0.355];
 const FLANGE_TOP_CLAW = CLAW.shoulder[1] - 0.14;
 const FLANGE_TOP_TAIL = TAIL.root[1] - 0.15;
-
 const _E = new THREE.Euler();
 const _M = new THREE.Matrix4();
 const rot = (g, r) => (r ? g.applyMatrix4(_M.makeRotationFromEuler(_E.set(r[0] || 0, r[1] || 0, r[2] || 0))) : g);
@@ -49,12 +44,6 @@ const ringAxis = (rO, rI, h, axis, seg = 40) => {
   if (axis === 'z') g.rotateX(Math.PI / 2);
   return g;
 };
-/** a flat plate from a 2D outline in the xy plane, thickness t along z, centred on z */
-const plate2 = (pts, t, z) => {
-  const s = new THREE.Shape(pts.map(([x, y]) => new THREE.Vector2(x, y)));
-  return new THREE.ExtrudeGeometry(s, {depth: t, bevelEnabled: true, bevelThickness: 0.0015, bevelSize: 0.0015, bevelSegments: 1}).translate(0, 0, z - t / 2);
-};
-
 /**
  * An explode unit: one Group (at the body origin, so explode is a plain offset) collecting static geometry per
  * material, bolt holes and bolt heads; flush() turns each material bucket into one mesh and stamps the CONTRACT tags.
@@ -110,23 +99,6 @@ function makeUnit(M, parent, ud) {
   };
   return u;
 }
-
-// ------------------------------------------------------------ buildBody helpers
-/** a flat plate with circular lightening holes: outline l x h in the xy plane, thickness t along z, centred */
-function holedPlate(l, h, t, holes) {
-  const s = new THREE.Shape();
-  s.moveTo(-l / 2, -h / 2);
-  s.lineTo(l / 2, -h / 2);
-  s.lineTo(l / 2, h / 2);
-  s.lineTo(-l / 2, h / 2);
-  s.closePath();
-  for (const [x, y, r] of holes) {
-    const p = new THREE.Path();
-    p.absarc(x, y, r, 0, Math.PI * 2, true);
-    s.holes.push(p);
-  }
-  return new THREE.ExtrudeGeometry(s, {depth: t, bevelEnabled: true, bevelThickness: 0.001, bevelSize: 0.001, bevelSegments: 1, curveSegments: 14}).translate(0, 0, -t / 2);
-}
 const _va = new V3();
 const _vb = new V3();
 const _vx = new V3();
@@ -157,22 +129,6 @@ function strutGeo(a, b, h, w, r = 0.004, up = [0, 1, 0]) {
   g.translate((_va.x + _vb.x) / 2, (_va.y + _vb.y) / 2, (_va.z + _vb.z) / 2);
   return g;
 }
-/** an elliptical arch rib in the yz plane at x: (zHalf, y0) over (0, apex) to (-zHalf, y0), a round tube */
-function archGeo(x, zHalf, y0, apex, r = 0.013, segs = 9) {
-  const pts = [];
-  for (let i = 0; i <= segs; i++) {
-    const ang = -Math.PI / 2 + (i / segs) * Math.PI;
-    pts.push(new V3(x, y0 + (apex - y0) * Math.cos(ang), zHalf * Math.sin(ang)));
-  }
-  return tubeGeo(pts, r, 6);
-}
-/** a half-torus rib over the y axis (canopy hoop) at x, scaled to a dome */
-function canopyRib(x, ry, rz, thickness, y0) {
-  const g = new THREE.TorusGeometry(1, thickness, 6, 22, Math.PI);
-  g.rotateY(Math.PI / 2);
-  g.scale(1, ry, rz);
-  return g.translate(x, y0, 0);
-}
 const lerp = (t, a, b) => a + (b - a) * t;
 /** a piecewise linear profile: pts = [[x, value], ...] ascending in x */
 const profile = (pts) => (x) => {
@@ -183,12 +139,107 @@ const profile = (pts) => (x) => {
   return pts[pts.length - 1][1];
 };
 
+// ------------------------------------------------------------ v9 shell geometry
+const SEN = 2.4; // superellipse exponent of the carapace section
+const smooth01 = (t) => (t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t));
+const seP = (a, b, f) => {
+  const c = Math.cos(f);
+  const s = Math.sin(f);
+  return [b * Math.sign(s) * Math.abs(s) ** (2 / SEN), a * Math.sign(c) * Math.abs(c) ** (2 / SEN)];
+};
+// carapace plan half width, crown and section centre height along x (teardrop: widest at the shoulders)
+const HW = profile([[-0.29, 0.152], [-0.24, 0.18], [-0.18, 0.212], [-0.12, 0.242], [-0.06, 0.266], [0.0, 0.284], [0.08, 0.296], [0.2, 0.3], [0.28, 0.282], [0.34, 0.245], [0.38, 0.2], [0.4, 0.165]]);
+const TOP = profile([[-0.29, 0.574], [-0.2, 0.597], [-0.1, 0.617], [0.0, 0.629], [0.14, 0.636], [0.28, 0.628], [0.35, 0.612], [0.4, 0.596]]);
+const YC = profile([[-0.29, 0.512], [0.22, 0.52], [0.4, 0.545]]);
+const F0 = -0.16; // the shells wrap this far (rad) below the section equator
+/** carapace section point at angle f (0 = +z flank, PI/2 = crown), offset d along the surface: [y, z] */
+const secPt = (x, f, d = 0) => {
+  const [dy, z] = seP(HW(x) + d, TOP(x) - YC(x) + d, f);
+  return [YC(x) + dy, z];
+};
+/** outward surface normal [0, ny, nz] at (x, f) */
+const secN = (x, f) => {
+  const p = secPt(x, f - 1e-3);
+  const q = secPt(x, f + 1e-3);
+  let ny = q[1] - p[1];
+  let nz = -(q[0] - p[0]);
+  const m = secPt(x, f);
+  if (ny * (m[0] - YC(x)) + nz * m[1] < 0) [ny, nz] = [-ny, -nz];
+  const l = Math.hypot(ny, nz) || 1;
+  return [0, ny / l, nz / l];
+};
+const crescentX = (x, d, t, g0, g1, n) => {
+  const P = [];
+  for (let i = 0; i <= n; i++) P.push(secPt(x, g0 + ((g1 - g0) * i) / n, d));
+  for (let i = n; i >= 0; i--) P.push(secPt(x, g0 + ((g1 - g0) * i) / n, d - t));
+  return P;
+};
+/** sweep closed (y, z) loops along ascending x: side + two caps, watertight */
+function loftRings(rings) {
+  for (const r of rings) {
+    let A = 0;
+    for (let j = 0; j < r.P.length; j++) {
+      const p = r.P[j];
+      const q = r.P[(j + 1) % r.P.length];
+      A += p[0] * q[1] - q[0] * p[1];
+    }
+    if (A < 0) r.P = r.P.slice().reverse();
+  }
+  const N = rings.length - 1;
+  const M = rings[0].P.length;
+  const pos = [];
+  const idx = [];
+  for (const r of rings) for (const [y, z] of r.P) pos.push(r.x, y, z);
+  for (let i = 0; i < N; i++)
+    for (let j = 0; j < M; j++) {
+      const a = i * M + j;
+      const b = i * M + ((j + 1) % M);
+      const c = (i + 1) * M + j;
+      const d = (i + 1) * M + ((j + 1) % M);
+      idx.push(a, b, c, b, d, c);
+    }
+  const side = new THREE.BufferGeometry();
+  side.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  side.setIndex(idx);
+  side.computeVertexNormals();
+  const out = [side];
+  for (const [r, sgn] of [[rings[0], -1], [rings[N], 1]]) {
+    const tris = THREE.ShapeUtils.triangulateShape(r.P.map(([y, z]) => new THREE.Vector2(y, z)), []);
+    const cp = [];
+    for (const t of tris) {
+      let [a, b, c] = t.map((i) => r.P[i]);
+      const nx = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+      if (nx * sgn < 0) [b, c] = [c, b];
+      for (const p of [a, b, c]) cp.push(r.x, p[0], p[1]);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(cp, 3));
+    g.computeVertexNormals();
+    out.push(g);
+  }
+  return out;
+}
+/** a cambered carapace plate from x0 (rear) to x1 (front): rolled rims, optional shingle lip (rear raised) */
+function shell(u, mat, x0, x1, o = {}) {
+  const {d = 0, t = 0.012, g0 = F0, g1 = PI - F0, n = 30, lip = 0, roll = 0.004} = o;
+  const L = x1 - x0;
+  const e = Math.min(0.009, L / 4);
+  const xs = [x0, x0 + e * 0.35, x0 + e];
+  const k = Math.max(2, Math.round((L - 2 * e) / 0.02));
+  for (let i = 1; i < k; i++) xs.push(x0 + e + ((L - 2 * e) * i) / k);
+  xs.push(x1 - e, x1 - e * 0.35, x1);
+  const rollAt = (x) => roll * (smooth01(1 - (x - x0) / e) ** 2 + smooth01(1 - (x1 - x) / e) ** 2);
+  const dAt = (x) => d + lip * (0.5 - (x - x0) / L);
+  for (const g of loftRings(xs.map((x) => ({x, P: crescentX(x, dAt(x) - rollAt(x), t, g0, g1, n)})))) u.add(mat, g);
+}
+// panel split angles: flank | dorsal | flank, with ~5 mm grooves
+const SPLIT = [[F0, 0.98], [1.03, PI - 1.03], [PI - 0.98, PI - F0]];
+const GAP = 0.012;
+
 /**
  * buildBody(M) -> {group, units, anchors, update(pose)} (CONTRACT.md, "Integration addendum").
- * group    body frame origin (x forward, y up, z left), ground y = 0; every visible mesh is in exactly one unit
  * units    explode units, direct children of group: chassis 0, armour 1, sensor head 2, the five bay modules 6
- * anchors  armor sensor head power control drive thermal (Object3D markers on the part each one names)
- * update   no body-internal animation yet (the canopy, bays and head move with their explode units only)
+ * anchors  armor sensor head power control drive thermal
  */
 export function buildBody(M) {
   const group = new THREE.Group();
@@ -200,7 +251,6 @@ export function buildBody(M) {
     units.push({group: u.group, order, explode});
     return u;
   };
-  // explode units: the chassis stays, the three armour layers lift, the head flies forward, the modules splay out
   const U = {
     chassis: unit('chassis', 'chassis', 0, [0, 0, 0]),
     armour: unit('armour', 'armor', 1, [0, 0.48, 0]),
@@ -211,480 +261,295 @@ export function buildBody(M) {
     thermal: unit('thermal', 'thermal', 6, [-0.46, 0.36, 0.34]),
     sensor: unit('sensor', 'sensor', 6, [0.46, 0.32, 0.38]),
   };
-  // carapace silhouette: an emperor-scorpion mesosoma, not a deck. halfW = the shell half width, topY = crown,
-  // edgeY = the drooping edge of the shell over the flanks. The shell is narrow (total ~0.43 m), arched (edge drops
-  // ~0.15 m) and wrapped down over the hip drums; the graphite hoops show in the seams between the plates.
-  const halfW = profile([[-0.54, 0.13], [-0.47, 0.205], [-0.38, 0.255], [-0.26, 0.288], [-0.10, 0.303], [0.06, 0.306], [0.20, 0.300], [0.31, 0.284], [0.40, 0.258], [0.47, 0.222], [0.54, 0.17]]);
-  const topY = profile([[-0.54, 0.548], [-0.46, 0.575], [-0.34, 0.596], [-0.18, 0.608], [0.0, 0.612], [0.16, 0.608], [0.28, 0.598], [0.38, 0.586], [0.46, 0.574], [0.54, 0.558]]);
-  const edgeY = profile([[-0.54, 0.492], [-0.42, 0.482], [-0.24, 0.474], [-0.04, 0.470], [0.16, 0.472], [0.32, 0.478], [0.44, 0.486], [0.54, 0.496]]);
-
-  // ========================================================== armour, three layers (explode order 1)
-  // The reference body is a segmented, ribbed mesosoma: a dark graphite core, and seven white tergite shells that
-  // span the full carapace width and wrap down over the flanks, shingled front-to-back with narrow dark seams.
-  // Only the shells fly up in the explode; the core stays on the chassis.
-  const a = U.armour;
   const c = U.chassis;
-  // exposed core: five graphite hoop ribs in the seams, a back spine and two orange conduits low on the flanks
-  for (const x of [0.320, 0.180, 0.040, -0.100, -0.240, -0.380]) {
-    c.add('graphite', archGeo(x, halfW(x) - 0.06, 0.43, topY(x) - 0.05, 0.009, 10));
-    for (const s of [1, -1]) c.box('graphite', 0.03, 0.02, 0.03, x, 0.455, s * 0.15, 0.003);
-  }
-  for (const s of [1, -1]) {
-    c.add('orange', tubeGeo([[0.36, 0.452, s * 0.175], [0.12, 0.458, s * 0.185], [-0.14, 0.456, s * 0.182], [-0.44, 0.45, s * 0.17]], 0.006, 8));
-    c.add('dark', tubeGeo([[0.30, 0.445, s * 0.16], [0.0, 0.452, s * 0.168], [-0.32, 0.447, s * 0.162]], 0.0075, 8));
-  }
-  c.box('dark', 0.72, 0.04, 0.24, -0.02, 0.468, 0, 0.004);
+  const a = U.armour;
 
-  // a tergite shell: plan-view rounded strip extruded 18 mm, bent over the body's elliptical section (top crown,
-  // ~0.12-0.15 m drop at the flank edge) so it wraps down over the hips; the outline bows slightly at front/rear
-  // a tergite shell: grid patch over the body's elliptical section (variable width and crown along x, drop to
-  // the flank edge) with a 16 mm thickness, so it reads as a real armoured plate, not a ribbon
-  const shellGeo = (xf, xb, lift, hwInset = 0, v0 = -1, v1 = 1, NX = 14, NZ = 20) => {
-    const L = xf - xb;
-    const P = (u, v) => {
-      const x = xb + u * L;
-      const hw = halfW(x) + 0.006 - hwInset;
-      const top = topY(x) + lift;
-      const drop = topY(x) - edgeY(x) + 0.012;
-      const z = v * hw;
-      const y = top - drop * v * v - 0.012 * Math.sin(Math.PI * u) ** 2;
-      return [x, y, z];
-    };
-    const pos = [];
-    const idx = [];
-    const at = (ix, iz) => iz * (NX + 1) + ix;
-    for (let iz = 0; iz <= NZ; iz++) for (let ix = 0; ix <= NX; ix++) pos.push(...P(ix / NX, v0 + (iz / NZ) * (v1 - v0)));
-    for (let iz = 0; iz < NZ; iz++) {
-      for (let ix = 0; ix < NX; ix++) {
-        const aa = at(ix, iz), bb = at(ix + 1, iz), cc = at(ix, iz + 1), dd = at(ix + 1, iz + 1);
-        idx.push(aa, cc, bb, bb, cc, dd);
-      }
-    }
-    const topCount = pos.length / 3;
-    for (let i = 0; i < topCount; i++) pos.push(pos[i * 3], pos[i * 3 + 1] - 0.016, pos[i * 3 + 2]);
-    for (let iz = 0; iz < NZ; iz++) {
-      for (let ix = 0; ix < NX; ix++) {
-        const aa = at(ix, iz) + topCount, bb = at(ix + 1, iz) + topCount, cc = at(ix, iz + 1) + topCount, dd = at(ix + 1, iz + 1) + topCount;
-        idx.push(aa, bb, cc, bb, dd, cc);
-      }
-    }
-    const rim = [];
-    for (let ix = 0; ix <= NX; ix++) rim.push([ix, 0]);
-    for (let iz = 1; iz <= NZ; iz++) rim.push([NX, iz]);
-    for (let ix = NX - 1; ix >= 0; ix--) rim.push([ix, NZ]);
-    for (let iz = NZ - 1; iz > 0; iz--) rim.push([0, iz]);
-    for (let i = 0; i < rim.length; i++) {
-      const [ix0, iz0] = rim[i];
-      const [ix1, iz1] = rim[(i + 1) % rim.length];
-      const aa = at(ix0, iz0), bb = at(ix1, iz1), cc = aa + topCount, dd = bb + topCount;
-      idx.push(aa, cc, bb, bb, cc, dd);
-    }
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-    g.setIndex(idx);
-    g.computeVertexNormals();
-    let up = 0, down = 0;
-    const nor = g.attributes.normal;
-    for (let i = 0; i < topCount; i++) { const ny = nor.getY(i); if (ny > 0.3) up++; else if (ny < -0.3) down++; }
-    if (down > up) {
-      const arr = g.index.array;
-      for (let i = 0; i < arr.length; i += 3) { const t = arr[i + 1]; arr[i + 1] = arr[i + 2]; arr[i + 2] = t; }
-      g.index.needsUpdate = true;
-      g.computeVertexNormals();
-    }
-    const surfAt = (x, z) => {
-      const hw = halfW(x) + 0.006 - hwInset;
-      const u = (x - xb) / L;
-      return topY(x) + lift - (topY(x) - edgeY(x) + 0.012) * (z / hw) ** 2 - 0.012 * Math.sin(Math.PI * u) ** 2;
-    };
-    return {g, surfAt, xf, xb};
-  };
-  // the carapace: a dark ribbed structural under-shell with seven raised white tergite plates bolted over it.
-  // Each plate is inset from the seams, so every seam shows a real stepped edge, the dark core and its exposed
-  // rib arcs / hydraulic line — the black skeleton reads between the white armour, like the reference.
-  {
-    const base = shellGeo(0.454, -0.514, -0.006, 0.0);
-    a.add('dark', base.g);
-    const SEC = [
-      [0.446, 0.336, 'white', 0.020],
-      [0.306, 0.198, 'white', 0.017],
-      [0.170, 0.062, 'white', 0.014],
-      [0.034, -0.074, 'white', 0.011],
-      [-0.102, -0.210, 'white', 0.008],
-      [-0.238, -0.346, 'white', 0.006],
-      [-0.374, -0.482, 'white', 0.004],
-    ];
-    const plates = [];
-    for (let i = 0; i < SEC.length; i++) {
-      const [xf, xb, mat, lift] = SEC[i];
-      const p = shellGeo(xf - 0.008, xb + 0.008, lift, 0.011);
-      // the reference tergite is a row of small rounded tiles with dark gaps: split the band into NT tiles across,
-      // each slightly crowned and inset, a few of them orange
-      const NT = 7;
-      const gap = 0.012;
-      for (let k = 0; k < NT; k++) {
-        const t0 = -1 + (2 * k) / NT + gap, t1 = -1 + (2 * (k + 1)) / NT - gap;
-        const tile = shellGeo(xf - 0.012, xb + 0.012, lift + 0.004, 0.011, t0, t1, 6, 4);
-        const orange = (i === 1 && (k === 2 || k === 6)) || (i === 3 && k === 4) || (i === 5 && (k === 1 || k === 7));
-        a.add(orange ? 'orange' : mat, tile.g);
-      }
-      const hw = halfW((xf + xb) / 2) + 0.006 - 0.011;
-      plates.push({p, hw, xf, xb});
-      // three bolt rows on every plate (front / middle / rear), black, following the dome normal
-      for (const x of [xf - 0.026, (xf + xb) / 2, xb + 0.026]) {
-        const dzBase = topY(x) - edgeY(x) + 0.012;
-        const hwx = halfW(x) + 0.006 - 0.011;
-        for (let j = 0; j <= 7; j++) {
-          const z = -(hwx - 0.012) + (j / 7) * 2 * (hwx - 0.012);
-          const y = p.surfAt(x, z);
-          a.hole([x, y + 0.002, z], [0, 1, (2 * dzBase * z) / (hwx * hwx)], 0.0032);
-        }
-      }
-      // service cover + vent slits on alternating plates
-      if (i % 2 === 1) {
-        const x = (xf + xb) / 2 + 0.02;
-        const z = hw * 0.3;
-        const y = p.surfAt(x, z);
-        const cov = rbox(0.055, 0.004, 0.05, 0.002);
-        cov.rotateX(-Math.atan((2 * (topY(x) - edgeY(x) + 0.012) * z) / (hw * hw)));
-        cov.translate(x, y + 0.002, z);
-        a.add('white', cov);
-        for (const dz of [-0.032, 0, 0.032]) for (const dx of [-0.024, 0.024]) a.hole([x + dx, y + 0.005, z + dz], [0, 1, 0], 0.0026);
-        const xv = (xf + xb) / 2 - 0.01;
-        for (let k = 0; k < 3; k++) {
-          const zv = -0.055 + k * 0.03;
-          const yv = p.surfAt(xv, zv);
-          a.add('dark', rbox(0.032, 0.005, 0.008, 0.001).translate(xv, yv - 0.001, zv));
-        }
-      }
-      // thin orange trim along the flank edge of alternating plates
-      if (i % 2 === 0) {
-        for (const s of [1, -1]) {
-          for (const u of [0.2, 0.5, 0.8]) {
-            const x = xb + (xf - xb) * u;
-            const hwx = halfW(x) + 0.006 - 0.011;
-            const z = s * hwx * 0.9;
-            const y = p.surfAt(x, z);
-            const g = rbox(0.03, 0.003, 0.012, 0.001);
-            g.rotateX(-Math.atan((2 * (topY(x) - edgeY(x) + 0.012) * z) / (hwx * hwx)));
-            g.translate(x, y + 0.003, z);
-            a.add('orange', g);
-          }
-        }
-      }
-    }
-    // exposed rib frame in the seams: steel rib arch + copper hydraulic line + orange clamps, and on the flanks a
-    // hinge boss and a dark piston down to the side beam
-    for (const x of [0.321, 0.184, 0.048, -0.088, -0.224, -0.360, -0.499]) {
-      const hw = halfW(x) + 0.02;
-      const pts = [];
-      const pts2 = [];
-      for (let i = 0; i <= 18; i++) {
-        const z = -hw + (i / 18) * 2 * hw;
-        const y = base.surfAt(x, z) + 0.005;
-        pts.push([x, y, z]);
-        pts2.push([x, y + 0.01, z]);
-      }
-      a.add('steel', tubeGeo(pts, 0.0065, 6));
-      a.add('copper', tubeGeo(pts2, 0.0032, 6));
-      for (const u of [-0.55, 0, 0.55]) {
-        const z = u * hw;
-        const y = base.surfAt(x, z) + 0.014;
-        a.box(u === 0 ? 'orange' : 'dark', 0.026, 0.011, 0.02, x, y, z, 0.002);
-        a.cyl('steel', 0.005, 0.016, x, y - 0.012, z, 'y', 12);
-      }
-      for (const s of [1, -1]) {
-        const z = s * (halfW(x) + 0.016);
-        a.cyl('steel', 0.015, 0.036, x, edgeY(x) + 0.006, z, 'z', 20);
-        a.box('dark', 0.02, 0.06, 0.022, x, 0.468, z, 0.004);
-        a.box('steel', 0.012, 0.02, 0.012, x, 0.5, z + s * 0.01, 0.002);
-      }
-    }
-    // crown seam line: a thin dark spine groove down the middle of the carapace
-    for (let i = 0; i < 14; i++) {
-      const x = 0.44 - i * 0.068;
-      const y = base.surfAt(x, 0) + 0.004;
-      a.add('dark', rbox(0.05, 0.003, 0.012, 0.001).translate(x, y, 0));
-    }
-  }
-  // glass canopy window set into the prosoma cowl, in a graphite frame with hinges
-  const dome = new THREE.SphereGeometry(1, 30, 12, 0, Math.PI * 2, 0, Math.PI / 2);
-  const CS = topY(0.39) + 0.02;
-  dome.scale(0.045, 0.016, 0.075);
-  a.add('glass', dome.translate(0.39, CS - 0.004, 0));
-  for (const x of [0.348, 0.39, 0.432]) a.add('dark', canopyRib(x, 0.014, 0.073, 0.006, CS - 0.004));
-  for (const s of [1, -1]) a.box('dark', 0.088, 0.006, 0.01, 0.39, CS - 0.004, s * 0.072, 0.0015);
-  for (const x of [0.344, 0.436]) a.box('dark', 0.01, 0.01, 0.15, x, CS - 0.004, 0, 0.0015);
-  // hip fairings: a small white shell with an orange band over every hip drum
+  // ========================================================== chassis (explode order 0)
+  const padZ = LEGS.map((L) => Math.abs(L.hip[2]) - PAD_BACK);
+  const RZ = Math.min(...padZ) - 0.03; // side rail centre line
+  const RAIL0 = -0.29;
+  const RAIL1 = 0.37;
+  for (const s of [1, -1]) c.box('graphite', RAIL1 - RAIL0, BEAM_H, BEAM_W, (RAIL0 + RAIL1) / 2, R, s * RZ, 0.006);
+  c.box('graphite', 0.615, 0.04, 0.07, (0.38 - 0.235) / 2, 0.45, 0, 0.006); // spine beam x -0.235..0.38
+  for (const x of [0.34, 0.19, -0.19]) c.box('dark', 0.03, 0.025, 2 * RZ - 0.03, x, 0.432, 0, 0.004); // cross ties
+  // tray under the rails on four hangers
+  c.box('graphite', 0.62, 0.012, 0.29, 0.03, 0.284, 0, 0.004);
+  for (const x of [0.3, 0.1, -0.1, -0.26]) for (const s of [1, -1]) c.box('graphite', 0.02, 0.067, 0.02, x, 0.322, s * 0.145, 0.003);
+  // hip brackets + steel hip pads, outer face at |hip.z| - PAD_BACK
   for (const L of LEGS) {
     const s = Math.sign(L.hip[2]);
-    const p = armorPanel(0.095, 0.016, 0.10, {M, mat: 'white', seams: [2, 2], bolts: true, arch: 0.024, radius: 0.006, stripe: {len: 0.045, w: 0.012, at: [0.2, 0]}});
-    p.rotation.x = s * 0.5;
-    p.position.set(L.hip[0], L.hip[1] + 0.035, s * (Math.abs(L.hip[2]) + 0.008));
-    a.obj(p);
+    const zf = Math.abs(L.hip[2]) - PAD_BACK;
+    const depth = zf - RZ + 0.01;
+    c.box('graphite', 0.11, 0.12, depth, L.hip[0], R, s * (RZ + depth / 2 - 0.005), 0.008);
+    c.box('steel', 0.12, 0.13, 0.012, L.hip[0], R, s * (zf - 0.006), 0.003);
+    for (const dx of [-0.042, 0.042]) for (const dy of [-0.045, 0.045]) c.hole([L.hip[0] + dx, R + dy, s * zf], [0, 0, s], 0.004);
   }
-  // rear cheek plates either side of the tail root turntable, and the belly plate with its vent grilles
+  // shell standoffs on the rails, rubber isolators on top (armour layer 2)
+  for (const x of [0.33, 0.2, 0.02, -0.19]) {
+    for (const s of [1, -1]) {
+      const z = s * RZ;
+      const yTop = secPt(x, Math.acos(Math.min(1, RZ / HW(x))), -0.02)[0];
+      c.box('graphite', 0.018, yTop - 0.445, 0.018, x, (yTop + 0.445) / 2, z, 0.003);
+      c.cyl('rubber', 0.013, 0.008, x, yTop + 0.004, z, 'y', 16);
+    }
+  }
+  // front frame: cross beam under the two claw-yaw flanges, inner struts from the rails, head post
+  const CX = CLAW.shoulder[0];
+  const CZ = Math.abs(CLAW.shoulder[2]);
+  c.box('graphite', 0.05, 0.022, 2 * CZ + 0.1, CX, FLANGE_TOP_CLAW - 0.012 - 0.011, 0, 0.004);
   for (const s of [1, -1]) {
-    const p = armorPanel(0.10, 0.014, 0.085, {M, mat: 'ivory', seams: [2, 1], bolts: true, arch: 0.008, radius: 0.005});
-    p.rotation.z = Math.PI / 2;
-    p.position.set(-0.515, 0.49, s * 0.115);
-    a.obj(p);
+    c.cyl('steel', 0.068, 0.012, CX, FLANGE_TOP_CLAW - 0.006, s * CZ, 'y', 40); // claw-yaw flange, top = S.y - 0.14
+    for (let i = 0; i < 8; i++) {
+      const t = (i / 8) * PI * 2 + PI / 8;
+      c.head([CX + Math.cos(t) * 0.058, FLANGE_TOP_CLAW, s * CZ + Math.sin(t) * 0.058], [0, 1, 0], 0.0038);
+    }
+    c.add('graphite', strutGeo([0.355, 0.4, s * 0.088], [CX, FLANGE_TOP_CLAW - 0.016, s * 0.088], 0.03, 0.026, 0.004));
+    c.box('graphite', 0.03, 0.04, RZ - 0.088 + 0.02, 0.35, 0.4, s * (RZ + 0.088) / 2, 0.004);
   }
-  const belly = armorPanel(0.62, 0.012, 0.22, {M, mat: 'dark', seams: [3, 1], bolts: true, radius: 0.005});
-  belly.position.set(-0.04, 0.235, 0);
-  a.obj(belly);
-  for (const s of [1, -1]) a.box('dark', 0.62, 0.03, 0.012, -0.04, 0.25, s * 0.115, 0.003);
-  for (const x of [0.02, -0.2]) {
-    const g = grille(0.16, 0.09, 9, {M});
-    g.rotation.x = Math.PI;
-    g.position.set(x, 0.226, 0);
-    a.obj(g);
-  }
-  // dark flank skirts below the side beams close the under-tray bays but stay clear of the eight hip pads
+  c.box('graphite', 0.04, 0.12, 0.08, 0.41, 0.35, 0, 0.005); // head post, top 0.41
+  // rear frame: deck on gussets with the tail J1 turntable flange (top = TAIL.root.y - 0.15)
+  const TX = TAIL.root[0];
+  c.box('graphite', 0.22, 0.026, 0.26, TX + 0.03, FLANGE_TOP_TAIL - 0.012 - 0.013, 0, 0.005);
   for (const s of [1, -1]) {
-    // white flank skirt split into tiles between the hips (reference: white plates run down the flanks)
-    for (const [x0, x1] of [[0.30, 0.17], [0.12, -0.02], [-0.07, -0.21], [-0.26, -0.38]]) a.box('white', x0 - x1, 0.1, 0.014, (x0 + x1) / 2, 0.33, s * 0.134, 0.012);
-    a.box('dark', 0.66, 0.08, 0.008, -0.06, 0.33, s * 0.128, 0.003);
-    for (const x of [-0.34, -0.17, 0.0, 0.17, 0.3]) a.hole([x, 0.34, s * 0.1395], [0, 0, s], 0.004);
-    const hatch = armorPanel(0.15, 0.012, 0.05, {M, mat: 'ivory', seams: [2, 1], bolts: true, radius: 0.004});
-    hatch.rotation.x = (s * Math.PI) / 2;
-    hatch.position.set(-0.13, 0.328, s * 0.1405);
-    a.obj(hatch);
-    const g = grille(0.09, 0.05, 7, {M});
-    g.rotation.x = (s * Math.PI) / 2;
-    g.position.set(-0.31, 0.33, s * 0.142);
-    a.obj(g);
+    c.add('graphite', strutGeo([RAIL0 + 0.01, 0.37, s * RZ], [TX + 0.06, FLANGE_TOP_TAIL - 0.016, s * 0.115], 0.03, 0.026, 0.004));
+    c.add('graphite', strutGeo([RAIL0 + 0.01, 0.3, s * 0.14], [TX + 0.1, FLANGE_TOP_TAIL - 0.03, s * 0.12], 0.02, 0.02, 0.003));
   }
-  anchors.armor = a.marker(-0.2, topY(-0.2) + 0.012, 0.03);
+  c.ring('steel', 0.096, 0.03, 0.012, TX, FLANGE_TOP_TAIL - 0.006, 0, 'y', 48);
+  for (let i = 0; i < 12; i++) {
+    const t = (i / 12) * PI * 2;
+    c.head([TX + Math.cos(t) * 0.09, FLANGE_TOP_TAIL, Math.sin(t) * 0.09], [0, 1, 0], 0.0036);
+  }
+  // rear bulkhead closing the carapace, with vent slots
+  {
+    const P = [];
+    for (let i = 0; i <= 30; i++) P.push(secPt(-0.286, F0 + ((PI - 2 * F0) * i) / 30, -0.013));
+    for (const g of loftRings([{x: -0.289, P}, {x: -0.283, P: P.map((p) => p.slice())}])) c.add('graphite', g);
+    for (const y of [0.507, 0.522, 0.537]) for (const s of [1, -1]) c.box('dark', 0.004, 0.007, 0.07, -0.2905, y, s * 0.05, 0.001);
+  }
 
+  // ========================================================== armour (explode order 1)
+  // prosoma shield: dark under-shell, two flank panels, dorsal panel split around the smoke canopy, carinae
+  const SH0 = 0.15;
+  const SH1 = 0.4;
+  shell(a, 'dark', SH0 + 0.004, SH1 - 0.004, {d: -0.011, t: 0.005, g0: F0 + 0.02, g1: PI - F0 - 0.02, roll: 0});
+  shell(a, 'ivory', SH0, SH1, {g0: SPLIT[0][0], g1: SPLIT[0][1]});
+  shell(a, 'ivory', SH0, SH1, {g0: SPLIT[2][0], g1: SPLIT[2][1]});
+  shell(a, 'ivory', SH0, SH1, {g0: SPLIT[1][0], g1: SPLIT[1][1]});
+  // raised median ridge (carina) running up to the sensor window
+  shell(a, 'ivory', SH0 + 0.012, 0.262, {d: 0.006, t: 0.01, g0: PI / 2 - 0.06, g1: PI / 2 + 0.06, roll: 0.004});
+  // sensor window: a small smoke-glass dome in a raised ivory bezel, a lens glowing under it
+  {
+    const WX = 0.305;
+    const wy = TOP(WX) - 0.002;
+    const tilt = Math.atan2(TOP(WX + 0.01) - TOP(WX - 0.01), 0.02);
+    const place = (g) => g.rotateZ(tilt).translate(WX, wy, 0);
+    a.add('ivory', place(ringAxis(0.05, 0.038, 0.012, 'y', 44).scale(1, 1, 0.72)));
+    a.add('dark', place(cylAxis(0.039, 0.006, 'y', 36).scale(1, 1, 0.72)));
+    a.add('smoke', place(new THREE.SphereGeometry(1, 32, 10, 0, PI * 2, 0, PI / 2).scale(0.039, 0.012, 0.028)));
+    a.add('lamp', place(new THREE.SphereGeometry(0.006, 12, 8).translate(0.006, 0.004, 0)));
+  }
+  for (const [g0, g1] of [[0.46, 0.53], [PI - 0.53, PI - 0.46]]) shell(a, 'ivory', SH0 + 0.022, 0.37, {d: 0.004, t: 0.008, g0, g1, roll: 0.003});
+  for (const x of [SH0 + 0.014, 0.386]) for (const ff of [0.12, 0.42, 0.78]) for (const fp of [ff, PI - ff]) {
+    const [y, z] = secPt(x, fp, 0.0004);
+    a.hole([x, y, z], secN(x, fp), 0.003);
+  }
+  for (const x of [SH0 + 0.024, 0.386]) for (const fp of [PI / 2 - 0.3, PI / 2 + 0.3]) {
+    const [y, z] = secPt(x, fp, 0.0004);
+    a.hole([x, y, z], secN(x, fp), 0.003);
+  }
+  // seven tergites shrinking toward the rear, 12 mm gaps with a graphite hoop and a thin orange seam band
+  {
+    const BASE = [0.064, 0.06, 0.056, 0.052, 0.048, 0.044, 0.04];
+    const xStart = SH0 - GAP;
+    const avail = xStart - -0.29 - (BASE.length - 1) * GAP;
+    const k = avail / BASE.reduce((p, q) => p + q, 0);
+    let xf = xStart;
+    shell(a, 'dark', -0.287, xStart + GAP * 0.5, {d: -0.016, t: 0.005, g0: F0 + 0.03, g1: PI - F0 - 0.03, roll: 0});
+    for (let i = 0; i < BASE.length; i++) {
+      const xb = xf - BASE[i] * k;
+      for (const [g0, g1] of SPLIT) shell(a, 'ivory', xb, xf, {g0, g1, lip: 0.016});
+      for (const [g0, g1] of [[0.52, 0.58], [PI - 0.58, PI - 0.52], [PI / 2 - 0.035, PI / 2 + 0.035]])
+        shell(a, 'ivory', xb + 0.006, xf - 0.006, {d: 0.003, t: 0.008, g0, g1, lip: 0.016, roll: 0.002});
+      // the gap ahead of this plate: orange seam band at the plate rim, graphite hoop behind it
+      shell(a, 'orange', xf + 0.0006, xf + 0.003, {d: -0.007, t: 0.006, roll: 0});
+      shell(a, 'graphite', xf + 0.003, xf + 0.009, {d: -0.01, t: 0.014, g0: F0 - 0.04, g1: PI - F0 + 0.04, roll: 0});
+      const xm = (xf + xb) / 2;
+      for (const fp of [0.2, 0.72, PI / 2, PI - 0.72, PI - 0.2]) {
+        const [y, z] = secPt(xm, fp, 0.0034 + (fp === PI / 2 ? 0.003 : 0));
+        if (fp !== PI / 2) a.hole([xm, y, z], secN(xm, fp), 0.0028);
+      }
+      xf = xb - GAP;
+    }
+  }
+  // flank fillers between the hip pads (hide the brackets) and a low skirt under the pads
+  for (const s of [1, -1]) {
+    const side = LEGS.filter((L) => Math.sign(L.hip[2]) === s).sort((p, q) => q.hip[0] - p.hip[0]);
+    for (let i = 0; i < side.length - 1; i++) {
+      const x0 = side[i].hip[0] - 0.068;
+      const x1 = side[i + 1].hip[0] + 0.068;
+      if (x0 - x1 < 0.02) continue;
+      const zf = Math.min(Math.abs(side[i].hip[2]), Math.abs(side[i + 1].hip[2])) - PAD_BACK - 0.008;
+      a.box('ivory', x0 - x1, 0.16, 0.01, (x0 + x1) / 2, 0.41, s * zf, 0.004);
+      a.hole([(x0 + x1) / 2, 0.47, s * (zf + 0.0054)], [0, 0, s], 0.0028);
+    }
+    a.box('ivory', 0.64, 0.066, 0.01, 0.03, 0.302, s * 0.178, 0.005);
+    a.box('graphite', 0.6, 0.004, 0.004, 0.03, 0.322, s * 0.1835, 0.001);
+    for (const x of [0.26, 0.03, -0.2]) a.box('dark', 0.004, 0.04, 0.004, x, 0.298, s * 0.1835, 0.001);
+    // rear quarter plates either side of the tail root (low, below the J1 carrier)
+    a.box('ivory', 0.1, 0.05, 0.012, -0.345, 0.352, s * 0.142, 0.005, [s * 0.35, 0, 0]);
+  }
+  // belly: sternum plates under the tray, shrinking toward the rear
+  {
+    const ST = [[0.33, 0.215, 0.13], [0.203, 0.088, 0.128], [0.076, -0.039, 0.122], [-0.051, -0.161, 0.112], [-0.173, -0.275, 0.1]];
+    for (const [x1, x0, hz] of ST) {
+      a.box('ivory', x1 - x0, 0.01, 2 * hz, (x0 + x1) / 2, 0.271, 0, 0.004);
+      for (const s of [1, -1]) a.hole([(x0 + x1) / 2, 0.2655, s * (hz - 0.015)], [0, -1, 0], 0.003);
+    }
+    a.box('graphite', 0.6, 0.006, 0.02, 0.03, 0.264, 0, 0.002); // median sternal rib
+  }
+  anchors.armor = a.marker(-0.15, TOP(-0.15) + 0.01, 0.03);
 
   // ========================================================== sensor head (explode order 2)
-  // sits between the two claw bases, on the front frame, top at ~0.59 m so the struck stinger clears it
   const h = U.head;
-  const HX = 0.488; // housing centre, front face at 0.548
-  h.box('steel', 0.11, 0.01, 0.13, 0.465, 0.423, 0, 0.003); // base flange on the front frame
-  for (const sx of [-0.038, 0.038]) for (const sz of [-0.045, 0.045]) h.hole([0.465 + sx, 0.429, sz], [0, 1, 0], 0.004);
-  h.box('graphite', 0.09, 0.026, 0.1, 0.465, 0.44, 0, 0.004); // neck
-  h.box('white', 0.128, 0.115, 0.215, HX, 0.508, 0, 0.024); // main housing (rounded, reference bulb)
-  // faceted white head shield: a low-poly dome over the housing, with a white brow over the dark face
+  h.box('steel', 0.09, 0.008, 0.11, 0.41, 0.414, 0, 0.003);
+  for (const sx of [-0.032, 0.032]) for (const sz of [-0.042, 0.042]) h.head([0.41 + sx, 0.418, sz], [0, 1, 0], 0.0035);
+  h.box('graphite', 0.06, 0.04, 0.1, 0.41, 0.44, 0, 0.006); // neck
+  // faceted ivory head: convex hull of superelliptic sections, wide under the shield rim, tapering to the brow
   {
-    const hood = new THREE.IcosahedronGeometry(1, 1);
-    hood.scale(0.088, 0.05, 0.132);
-    h.add('ivory', hood.translate(HX - 0.004, 0.56, 0));
-    for (const s of [1, -1]) h.add('white', new THREE.IcosahedronGeometry(1, 0).scale(0.03, 0.028, 0.045).translate(HX - 0.02, 0.548, s * 0.085));
-    h.box('white', 0.045, 0.016, 0.17, 0.552, 0.545, 0, 0.005); // brow over the visor
-    h.box('graphite', 0.05, 0.008, 0.1, 0.5, 0.596, 0, 0.003); // hood rib
+    const SEC = [[0.37, 0.088, 0.418, 0.578], [0.42, 0.092, 0.42, 0.582], [0.47, 0.084, 0.428, 0.574], [0.515, 0.066, 0.438, 0.552], [0.55, 0.042, 0.452, 0.522]];
+    const P = [];
+    for (const [x, w, y0, y1] of SEC) {
+      const yc = (y0 + y1) / 2;
+      const hb = (y1 - y0) / 2;
+      for (let i = 0; i < 10; i++) {
+        const ang = (i / 10) * PI * 2;
+        const c = Math.cos(ang);
+        const s = Math.sin(ang);
+        P.push(new V3(x, yc + hb * Math.sign(s) * Math.abs(s) ** 0.7, w * Math.sign(c) * Math.abs(c) ** 0.7));
+      }
+    }
+    P.push(new V3(0.566, 0.49, 0));
+    h.add('ivory', new ConvexGeometry(P));
   }
-  // smoked glass visor across the front, with the optics recessed behind it
-  h.box('smoke', 0.012, 0.095, 0.17, 0.552, 0.505, 0, 0.008);
-  h.box('graphite', 0.03, 0.012, 0.19, 0.545, 0.56, 0, 0.004); // visor top rail
-  h.box('graphite', 0.03, 0.012, 0.19, 0.545, 0.45, 0, 0.004); // visor bottom rail
-  // stereo camera pair
+  // median ocular tubercle: an ivory mound carrying the two main lamp eyes
+  {
+    const T = [];
+    for (const [x, y, z] of [[0.44, 0.574, 0.034], [0.5, 0.566, 0.032], [0.468, 0.6, 0.022], [0.505, 0.592, 0.02], [0.52, 0.572, 0.012]]) T.push(new V3(x, y, z), new V3(x, y, -z));
+    h.add('ivory', new ConvexGeometry(T));
+  }
   for (const s of [1, -1]) {
-    h.cyl('dark', 0.019, 0.02, 0.545, 0.528, s * 0.045, 'x', 24);
-    h.cyl('steel', 0.021, 0.007, 0.556, 0.528, s * 0.045, 'x', 24);
-    h.cyl('smoke', 0.0135, 0.004, 0.5575, 0.528, s * 0.045, 'x', 24);
+    h.add('smoke', new THREE.SphereGeometry(0.0115, 20, 14).scale(1, 0.85, 1).translate(0.503, 0.587, s * 0.0155));
+    h.add('lamp', new THREE.SphereGeometry(0.0062, 14, 10).translate(0.51, 0.589, s * 0.0155));
+    // lateral eyes: three small lamps per side on a smoke strip at the front corner
+    h.add('smoke', rbox(0.036, 0.012, 0.01, 0.003, 1).rotateY(s * 0.55).translate(0.535, 0.534, s * 0.056));
+    for (let i = 0; i < 3; i++) {
+      const u = i / 2;
+      h.add('lamp', new THREE.SphereGeometry(0.0036, 8, 6).translate(0.521 + u * 0.026, 0.536, s * (0.065 - u * 0.016)));
+    }
+    // chelicerae: black two-segment jaws under the front edge
+    const C = [[0.535, 0.462, 0.008], [0.535, 0.462, 0.04], [0.535, 0.43, 0.01], [0.535, 0.43, 0.038], [0.584, 0.456, 0.014], [0.584, 0.456, 0.034], [0.588, 0.434, 0.016], [0.588, 0.434, 0.032]];
+    h.add('dark', new ConvexGeometry(C.map(([x, y, z]) => new V3(x, y, s * z))));
+    h.add('dark', new THREE.ConeGeometry(0.0075, 0.042, 12).rotateZ(PI - 0.45).translate(0.596, 0.42, s * 0.024));
   }
-  // depth camera below, IR module and the two lamps
-  h.box('dark', 0.05, 0.036, 0.06, 0.534, 0.475, 0, 0.006);
-  for (const s of [1, -1]) h.cyl('smoke', 0.0075, 0.004, 0.555, 0.475, s * 0.013, 'x', 16);
-  h.cyl('dark', 0.014, 0.012, 0.552, 0.508, 0, 'x', 20);
-  h.ring('copper', 0.016, 0.01, 0.008, 0.556, 0.508, 0, 'x', 20);
-  h.cyl('smoke', 0.008, 0.004, 0.5575, 0.508, 0, 'x', 16);
-  for (const s of [1, -1]) h.cyl('lamp', 0.008, 0.008, 0.552, 0.543, s * 0.075, 'x', 16);
-  // lateral optics pods (the reference's two big side eyes), clamped to the housing cheeks
-  for (const s of [1, -1]) {
-    h.add('smoke', new THREE.SphereGeometry(0.03, 20, 14).translate(0.5, 0.51, s * 0.105));
-    h.add('steel', new THREE.TorusGeometry(0.031, 0.005, 8, 26).translate(0.5, 0.51, s * 0.107));
-    h.box('graphite', 0.05, 0.03, 0.02, 0.5, 0.51, s * 0.085, 0.004);
-    h.hole([0.5, 0.53, s * 0.088], [0, 1, 0], 0.004);
-  }
-  // lidar puck on top with a steel band and a smoked window (head top ~0.59 m)
-  h.cyl('graphite', 0.044, 0.028, 0.475, 0.574, 0, 'y', 32);
-  h.ring('steel', 0.047, 0.042, 0.008, 0.475, 0.58, 0, 'y', 32);
-  h.cyl('steel', 0.046, 0.006, 0.475, 0.561, 0, 'y', 32);
-  h.cyl('smoke', 0.032, 0.004, 0.475, 0.588, 0, 'y', 32);
-  h.cyl('dark', 0.02, 0.004, 0.475, 0.589, 0, 'y', 24);
-  // top service panel with bolts and label strips, side cover plates
-  h.box('white', 0.07, 0.008, 0.12, 0.48, 0.561, 0, 0.004);
-  for (const sx of [-0.025, 0.025]) for (const sz of [-0.045, 0.045]) h.hole([0.48 + sx, 0.565, sz], [0, 1, 0], 0.0035);
-  for (const s of [1, -1]) {
-    h.box('white', 0.05, 0.008, 0.012, 0.505, 0.5605, s * 0.055, 0.002);
-    h.box('white', 0.07, 0.06, 0.008, 0.49, 0.505, s * 0.102, 0.004);
-    h.hole([0.49, 0.53, s * 0.107], [0, 0, s], 0.0035);
-    h.hole([0.49, 0.48, s * 0.107], [0, 0, s], 0.0035);
-  }
-  // harness stub from the head down to the sensor bay bulkhead
-  h.obj(cable([[0.45, 0.452, 0.06], [0.437, 0.448, 0.085], [0.42, 0.452, 0.1], [0.4, 0.46, 0.1]], 0.006, {M, mat: 'dark'}));
-  anchors.sensor = h.marker(0.558, 0.505, 0);
-  anchors.head = h.marker(0.475, 0.592, 0);
-
+  anchors.sensor = h.marker(0.51, 0.589, 0);
+  anchors.head = h.marker(0.47, 0.585, 0);
 
   // ========================================================== bay modules (explode order 6)
-  // power bay: eight battery modules on the tray, BMS and copper busbars, under the deck
+  // power: eight battery modules on the tray, busbars, BMS
   const p = U.power;
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < 4; i++)
     for (const s of [1, -1]) {
-      const x = 0.02 + i * 0.08;
-      const z = s * 0.067;
-      p.box('dark', 0.074, 0.104, 0.118, x, 0.336, z, 0.008);
-      p.box('graphite', 0.068, 0.012, 0.11, x, 0.394, z, 0.003);
-      p.box('white', 0.076, 0.01, 0.048, x, 0.352, z, 0.002);
-      p.box('white', 0.026, 0.002, 0.05, x, 0.401, z, 0.001);
-      p.cyl('steel', 0.008, 0.012, x - 0.022, 0.407, z, 'y', 16);
-      p.cyl('copper', 0.007, 0.012, x + 0.022, 0.407, z, 'y', 16);
-      p.box('graphite', 0.015, 0.05, 0.02, x + 0.045, 0.32, z + 0.012, 0.003); // module handle
+      const x = -0.12 + i * 0.08;
+      const z = s * 0.066;
+      p.box('dark', 0.072, 0.1, 0.112, x, 0.341, z, 0.008);
+      p.box('graphite', 0.066, 0.01, 0.106, x, 0.396, z, 0.003);
+      p.box('white', 0.04, 0.012, 0.002, x, 0.36, s * 0.1225, 0.0008);
+      p.cyl('steel', 0.007, 0.008, x - 0.02, 0.405, z, 'y', 14);
+      p.cyl('copper', 0.007, 0.008, x + 0.02, 0.405, z, 'y', 14);
     }
-  }
-  for (const z of [-0.04, 0, 0.04]) p.box('copper', 0.36, 0.008, 0.016, 0.14, 0.42, z, 0.002);
-  for (const x of [0.0, 0.28]) for (const z of [-0.04, 0.04]) p.cyl('steel', 0.006, 0.02, x, 0.41, z, 'y', 12);
-  p.box('graphite', 0.045, 0.08, 0.12, 0.305, 0.372, 0, 0.006); // BMS
-  p.box('white', 0.03, 0.002, 0.08, 0.305, 0.413, 0.02, 0.001);
-  p.box('dark', 0.02, 0.02, 0.03, 0.328, 0.39, -0.03, 0.003);
-  p.box('white', 0.047, 0.006, 0.04, 0.305, 0.34, 0.045, 0.002);
-  for (const z of [-0.045, 0.045]) p.hole([0.315, 0.412, z], [0, 1, 0], 0.0035);
-  p.obj(cable([[0.29, 0.415, 0.03], [0.2, 0.424, 0.02], [0.08, 0.424, 0.0], [-0.02, 0.42, -0.02], [-0.1, 0.412, -0.03]], 0.008, {M, mat: 'dark'}));
-  anchors.power = p.marker(0.305, 0.41, 0);
+  for (const s of [1, -1]) p.box('copper', 0.28, 0.004, 0.012, 0.0, 0.411, s * 0.066, 0.001);
+  p.box('graphite', 0.05, 0.08, 0.12, 0.215, 0.33, 0, 0.006); // BMS
+  p.box('white', 0.03, 0.002, 0.07, 0.215, 0.371, 0, 0.001);
+  p.obj(cable([[0.19, 0.36, 0.05], [0.16, 0.405, 0.066], [0.14, 0.412, 0.066]], 0.005, {M, mat: 'dark'}));
+  anchors.power = p.marker(0.215, 0.375, 0);
 
-  // control bay: computer, motion controller, comms and the IMU on isolators, under the glass canopy
-  const q = U.control;
-  q.box('graphite', 0.12, 0.042, 0.14, 0.185, 0.464, 0.015, 0.006); // computer chassis
-  for (let i = 0; i < 5; i++) q.box('alu', 0.1, 0.01, 0.008, 0.185, 0.49, -0.045 + i * 0.03, 0.002); // heatsink fins
-  for (const z of [-0.02, 0.02, 0.06]) q.box('dark', 0.018, 0.018, 0.016, 0.128, 0.462, z, 0.003); // rear connectors
-  q.box('white', 0.05, 0.006, 0.008, 0.2, 0.487, 0.09, 0.002);
-  for (const sx of [-0.045, 0.045]) for (const sz of [-0.055, 0.06]) q.hole([0.185 + sx, 0.486, 0.015 + sz], [0, 1, 0], 0.0035);
-  q.box('graphite', 0.08, 0.038, 0.1, 0.07, 0.462, 0.045, 0.006); // motion controller
-  q.box('white', 0.05, 0.006, 0.01, 0.07, 0.483, 0.045, 0.002);
-  for (const z of [0.02, 0.05, 0.08]) q.box('dark', 0.014, 0.014, 0.012, 0.032, 0.46, z, 0.002);
-  q.box('dark', 0.06, 0.03, 0.07, 0.055, 0.458, -0.06, 0.005); // comms module
-  q.cyl('steel', 0.008, 0.014, 0.03, 0.465, -0.06, 'x', 14);
-  q.box('white', 0.03, 0.002, 0.05, 0.055, 0.474, -0.06, 0.001);
-  // IMU on three rubber isolators
-  for (const [ix, iz] of [[-0.012, -0.012], [0.012, -0.012], [0, 0.014]]) q.cyl('rubber', 0.007, 0.014, 0.235 + ix, 0.45, -0.07 + iz, 'y', 12);
-  q.box('alu', 0.032, 0.032, 0.032, 0.235, 0.473, -0.07, 0.004);
-  q.box('dark', 0.026, 0.006, 0.026, 0.235, 0.492, -0.07, 0.002);
-  q.cyl('copper', 0.005, 0.01, 0.255, 0.473, -0.07, 'x', 10);
-  q.obj(cable([[0.13, 0.462, -0.02], [0.1, 0.452, -0.04], [0.07, 0.462, -0.045], [0.04, 0.466, -0.05]], 0.005, {M, mat: 'dark'}));
-  q.hole([0.185, 0.486, 0.015], [0, 1, 0], 0.004);
-  anchors.control = q.marker(0.185, 0.5, 0.015);
-
-
-  // drive bay: eight servo drive cards on a cold plate above the deck, PDU (contactors, fuse, pre-charge,
-  // DC bus, isolated aux supply) and the eight leg connectors below it
-  const d = U.drive;
-  d.box('alu', 0.28, 0.018, 0.27, -0.205, 0.452, 0, 0.004); // cold plate
-  d.obj(cable([[-0.33, 0.456, -0.11], [-0.2, 0.452, -0.12], [-0.07, 0.454, -0.1], [-0.06, 0.46, -0.06]], 0.006, {M, mat: 'copper'}));
-  for (const s of [1, -1]) {
-    d.box('steel', 0.26, 0.01, 0.02, -0.205, 0.462, s * 0.065, 0.002);
-    for (let i = 0; i < 4; i++) {
-      const x = -0.31 + i * 0.065;
-      const z = s * 0.065;
-      d.box('dark', 0.055, 0.062, 0.012, x, 0.496, z, 0.003); // servo drive card
-      d.box('alu', 0.045, 0.048, 0.007, x, 0.496, z + s * 0.011, 0.002); // heatsink on the cold plate side
-      for (let f = 0; f < 3; f++) d.box('alu', 0.005, 0.045, 0.014, x - 0.016 + f * 0.016, 0.498, z + s * 0.016, 0.001);
-      d.box('steel', 0.014, 0.016, 0.014, x + 0.017, 0.523, z, 0.002); // capacitor cap
-      d.box('steel', 0.048, 0.008, 0.016, x, 0.531, z, 0.002); // connector strip
-      d.hole([x, 0.531, z], [0, 1, 0], 0.003);
-    }
-  }
-  d.box('graphite', 0.015, 0.03, 0.24, -0.062, 0.47, 0, 0.003); // card cage front rail
-  // PDU below the deck
-  d.box('graphite', 0.06, 0.09, 0.08, -0.26, 0.35, 0.06, 0.006); // main contactor
-  d.box('steel', 0.05, 0.012, 0.06, -0.26, 0.401, 0.06, 0.003);
-  d.box('graphite', 0.04, 0.07, 0.06, -0.33, 0.34, 0.06, 0.005); // pre-charge contactor + resistor
-  d.box('steel', 0.03, 0.01, 0.04, -0.33, 0.379, 0.06, 0.002);
-  d.cyl('steel', 0.018, 0.09, -0.3, 0.32, -0.05, 'x', 20); // main fuse
-  d.cyl('white', 0.019, 0.02, -0.3, 0.32, -0.05, 'x', 20);
-  d.box('graphite', 0.08, 0.07, 0.1, -0.245, 0.345, -0.06, 0.006); // isolated aux supply
-  d.box('white', 0.03, 0.002, 0.06, -0.245, 0.381, -0.06, 0.001);
-  d.box('white', 0.082, 0.006, 0.03, -0.245, 0.31, -0.06, 0.002);
-  for (const z of [-0.035, 0.035]) {
-    d.box('copper', 0.14, 0.01, 0.018, -0.3, 0.424, z, 0.002); // DC bus bars
-    for (const x of [-0.36, -0.25]) d.cyl('steel', 0.006, 0.024, x, 0.41, z, 'y', 12);
-  }
-  for (const z of [-0.05, 0.0, 0.05]) d.obj(cable([[-0.2, 0.43, z], [-0.12, 0.435, z * 0.6], [-0.05, 0.44, 0]], 0.005, {M, mat: 'dark'}));
-  // leg connector panel, eight circular connectors
-  d.box('steel', 0.018, 0.1, 0.22, -0.378, 0.36, 0, 0.003);
-  for (let r = 0; r < 4; r++) {
-    for (const s of [1, -1]) {
-      const y = 0.312 + r * 0.032;
-      const z = s * 0.062;
-      d.cyl('steel', 0.012, 0.02, -0.383, y, z, 'x', 16);
-      d.cyl('dark', 0.007, 0.012, -0.39, y, z, 'x', 12);
-      d.hole([-0.386, y, z], [-1, 0, 0], 0.003);
-    }
-  }
-  anchors.drive = d.marker(-0.31, 0.534, 0.065);
-
-  // thermal bay: pump, reservoir, cold plates, copper loop and the radiator with its two fans at the back
+  // thermal: cold plate over the batteries, pump + reservoir behind them, radiator and fans at the bulkhead
   const t = U.thermal;
-  // radiator core + alu fins
-  t.box('graphite', 0.026, 0.085, 0.22, -0.355, 0.5025, 0, 0.004);
-  for (let i = 0; i < 12; i++) t.box('alu', 0.018, 0.078, 0.005, -0.357, 0.5025, -0.1 + i * 0.0182, 0.001);
-  t.box('steel', 0.03, 0.014, 0.23, -0.355, 0.545, 0, 0.003);
-  t.box('steel', 0.03, 0.014, 0.23, -0.355, 0.462, 0, 0.003);
+  t.box('alu', 0.3, 0.006, 0.2, 0, 0.42, 0, 0.002);
+  t.box('copper', 0.27, 0.004, 0.16, 0, 0.425, 0, 0.001);
+  t.box('graphite', 0.022, 0.085, 0.2, -0.25, 0.488, 0, 0.004); // radiator core
+  for (let i = 0; i < 10; i++) t.box('alu', 0.026, 0.078, 0.004, -0.25, 0.488, -0.09 + i * 0.02, 0.001);
   for (const s of [1, -1]) {
-    t.add('graphite', strutGeo([-0.355, 0.462, s * 0.095], [-0.32, 0.443, s * 0.075], 0.02, 0.03, 0.003));
-    // fan: dark ring, steel band, steel hub and five blades, blowing out of the back
-    const fx = -0.372;
-    t.cyl('dark', 0.045, 0.014, fx, 0.5025, s * 0.058, 'x', 28);
-    t.ring('steel', 0.047, 0.042, 0.006, fx - 0.004, 0.5025, s * 0.058, 'x', 28);
-    t.cyl('steel', 0.014, 0.016, fx, 0.5025, s * 0.058, 'x', 16);
-    for (let b = 0; b < 5; b++) {
-      const g = rbox(0.006, 0.032, 0.009, 0.002, 1);
-      g.translate(0, 0.021, 0).rotateX((b / 5) * Math.PI * 2);
-      g.translate(fx, 0.5025, s * 0.058);
-      t.add('dark', g);
+    const fx = -0.268;
+    t.cyl('dark', 0.038, 0.012, fx, 0.488, s * 0.052, 'x', 28);
+    t.ring('steel', 0.04, 0.035, 0.006, fx - 0.002, 0.488, s * 0.052, 'x', 28);
+    t.cyl('steel', 0.012, 0.014, fx, 0.488, s * 0.052, 'x', 16);
+  }
+  t.box('steel', 0.1, 0.008, 0.22, -0.215, 0.294, 0, 0.002);
+  t.cyl('dark', 0.028, 0.06, -0.215, 0.33, 0.07, 'x', 24); // pump
+  t.ring('steel', 0.03, 0.026, 0.008, -0.19, 0.33, 0.07, 'x', 24);
+  t.box('alu', 0.08, 0.065, 0.09, -0.215, 0.331, -0.07, 0.006); // reservoir
+  t.box('smoke', 0.05, 0.018, 0.004, -0.215, 0.333, -0.1165, 0.001);
+  t.obj(cable([[-0.215, 0.33, 0.1], [-0.235, 0.39, 0.125], [-0.25, 0.45, 0.105], [-0.25, 0.47, 0.08]], 0.006, {M, mat: 'copper'}));
+  t.obj(cable([[-0.215, 0.364, -0.07], [-0.235, 0.41, -0.115], [-0.25, 0.46, -0.1], [-0.25, 0.47, -0.08]], 0.006, {M, mat: 'copper'}));
+  t.obj(cable([[-0.15, 0.42, 0.09], [-0.2, 0.43, 0.105], [-0.245, 0.452, 0.098]], 0.005, {M, mat: 'copper'}));
+  anchors.thermal = t.marker(-0.25, 0.535, 0.06);
+
+  // drive: eight servo cards on a cold plate over the spine, PDU behind the batteries, leg connector panel
+  const d = U.drive;
+  d.box('alu', 0.21, 0.012, 0.22, -0.1, 0.476, 0, 0.003);
+  for (const s of [1, -1])
+    for (let i = 0; i < 4; i++) {
+      const x = -0.18 + i * 0.05;
+      const z = s * 0.06;
+      d.box('dark', 0.042, 0.06, 0.01, x, 0.512, z, 0.003);
+      d.box('alu', 0.036, 0.048, 0.006, x, 0.512, z + s * 0.008, 0.002);
+      for (let fn = 0; fn < 3; fn++) d.box('alu', 0.004, 0.044, 0.01, x - 0.012 + fn * 0.012, 0.512, z + s * 0.015, 0.001);
+      d.box('steel', 0.04, 0.008, 0.014, x, 0.546, z, 0.002);
+      d.hole([x, 0.5502, z], [0, 1, 0], 0.003);
     }
+  d.box('graphite', 0.012, 0.03, 0.16, 0.01, 0.497, 0, 0.003);
+  d.box('graphite', 0.05, 0.05, 0.07, -0.225, 0.398, 0.075, 0.005); // main contactor
+  d.box('steel', 0.04, 0.008, 0.05, -0.225, 0.427, 0.075, 0.002);
+  d.cyl('steel', 0.014, 0.07, -0.225, 0.39, -0.075, 'x', 18); // main fuse
+  for (const dx of [-0.037, 0.037]) d.cyl('white', 0.015, 0.006, -0.225 + dx, 0.39, -0.075, 'x', 18);
+  for (const s of [1, -1]) d.box('copper', 0.08, 0.008, 0.014, -0.2, 0.42, s * 0.035, 0.002);
+  d.box('steel', 0.012, 0.07, 0.2, -0.284, 0.33, 0, 0.003); // leg connector panel
+  for (let r = 0; r < 2; r++) for (let k = 0; k < 4; k++) {
+    const z = -0.075 + k * 0.05;
+    const y = 0.315 + r * 0.03;
+    d.cyl('steel', 0.009, 0.012, -0.294, y, z, 'x', 16);
+    d.hole([-0.3, y, z], [-1, 0, 0], 0.0028);
   }
-  // pump and reservoir under the deck
-  t.box('steel', 0.12, 0.012, 0.16, -0.1, 0.283, 0.06, 0.003);
-  t.cyl('dark', 0.03, 0.06, -0.1, 0.31, 0.09, 'x', 24);
-  t.ring('steel', 0.032, 0.028, 0.008, -0.075, 0.31, 0.09, 'x', 24);
-  t.cyl('steel', 0.012, 0.02, -0.1, 0.31, 0.055, 'y', 14);
-  t.cyl('steel', 0.012, 0.02, -0.1, 0.31, 0.125, 'y', 14);
-  t.box('graphite', 0.03, 0.06, 0.03, -0.1, 0.295, 0.155, 0.003);
-  t.box('alu', 0.1, 0.072, 0.11, -0.17, 0.32, -0.06, 0.006); // reservoir
-  t.box('smoke', 0.07, 0.02, 0.006, -0.17, 0.322, -0.003, 0.001); // level window
-  t.cyl('steel', 0.012, 0.02, -0.17, 0.362, -0.06, 'y', 14);
-  // two thermal cold plates on a manifold
-  for (let i = 0; i < 2; i++) {
-    t.box('alu', 0.12, 0.012, 0.2, -0.14, 0.418 - i * 0.03, 0, 0.003);
-    t.box('copper', 0.1, 0.006, 0.17, -0.14, 0.425 - i * 0.03, 0, 0.002);
-  }
-  // copper loop: pump -> radiator -> cold plates -> reservoir
-  t.obj(cable([[-0.1, 0.31, 0.125], [-0.13, 0.36, 0.14], [-0.22, 0.44, 0.13], [-0.3, 0.49, 0.1], [-0.33, 0.5, 0.06]], 0.006, {M, mat: 'copper'}));
-  t.obj(cable([[-0.17, 0.36, -0.11], [-0.22, 0.43, -0.12], [-0.3, 0.48, -0.09], [-0.335, 0.5, -0.05], [-0.35, 0.512, -0.02]], 0.006, {M, mat: 'copper'}));
-  t.obj(cable([[-0.14, 0.44, 0.08], [-0.2, 0.45, 0.1], [-0.3, 0.47, 0.08]], 0.006, {M, mat: 'copper'}));
-  anchors.thermal = t.marker(-0.355, 0.52, 0.06);
+  anchors.drive = d.marker(-0.105, 0.555, 0.06);
 
+  // control: computer, motion controller, comms, IMU on isolators, under the canopy
+  const q = U.control;
+  for (const [x, z] of [[0.14, 0.025], [0.14, -0.025], [0.24, 0.025], [0.24, -0.025], [0.09, 0.025], [0.09, -0.025]]) q.cyl('steel', 0.005, 0.02, x, 0.48, z, 'y', 12);
+  q.box('graphite', 0.13, 0.04, 0.13, 0.19, 0.51, 0, 0.006);
+  for (let i = 0; i < 6; i++) q.box('alu', 0.11, 0.012, 0.005, 0.19, 0.536, -0.05 + i * 0.02, 0.001);
+  q.box('graphite', 0.07, 0.03, 0.06, 0.09, 0.505, 0.035, 0.005); // motion controller
+  q.box('dark', 0.05, 0.025, 0.05, 0.09, 0.5025, -0.035, 0.004); // comms
+  q.cyl('steel', 0.006, 0.012, 0.062, 0.505, -0.035, 'x', 12);
+  for (const [ix, iz] of [[-0.01, -0.01], [0.01, -0.01], [0, 0.012]]) q.cyl('rubber', 0.006, 0.02, 0.28 + ix, 0.48, iz, 'y', 12);
+  q.box('alu', 0.03, 0.03, 0.03, 0.28, 0.505, 0, 0.004); // IMU
+  q.obj(cable([[0.125, 0.505, 0.0], [0.11, 0.5, -0.02], [0.1, 0.505, -0.03]], 0.004, {M, mat: 'dark'}));
+  anchors.control = q.marker(0.19, 0.545, 0);
 
-  // sensor bay: perception unit, positioning module and the camera driver board in the front bay
+  // sensor bay: perception unit and camera driver board behind the head
   const sb = U.sensor;
-  sb.box('graphite', 0.048, 0.095, 0.14, 0.394, 0.4925, 0, 0.006); // perception unit
-  for (let i = 0; i < 5; i++) sb.box('alu', 0.04, 0.008, 0.01, 0.394, 0.542, -0.05 + i * 0.025, 0.001);
-  sb.box('white', 0.05, 0.006, 0.012, 0.394, 0.5, 0.072, 0.002);
-  for (const z of [-0.04, 0.04]) sb.box('steel', 0.02, 0.018, 0.016, 0.37, 0.47, z, 0.003);
-  sb.box('graphite', 0.046, 0.032, 0.11, 0.345, 0.46, 0, 0.005); // positioning module
-  sb.box('white', 0.03, 0.002, 0.06, 0.345, 0.477, 0.02, 0.001);
-  sb.cyl('steel', 0.008, 0.012, 0.325, 0.462, 0.04, 'x', 14);
-  sb.box('dark', 0.05, 0.008, 0.09, 0.345, 0.487, 0, 0.002); // camera / lidar driver board
-  for (const x of [0.33, 0.36]) for (const z of [-0.03, 0.03]) sb.cyl('steel', 0.005, 0.02, x, 0.478, z, 'y', 10);
-  for (const z of [-0.025, 0.025]) sb.box('copper', 0.01, 0.006, 0.012, 0.36, 0.492, z, 0.001);
-  sb.obj(cable([[0.4, 0.5, 0.06], [0.407, 0.5, 0.04], [0.4, 0.48, 0.02], [0.37, 0.49, 0.0]], 0.005, {M, mat: 'dark'}));
-  sb.hole([0.394, 0.542, 0], [0, 1, 0], 0.004);
-  sb.hole([0.345, 0.478, -0.05], [0, 1, 0], 0.0035);
-  sb.hole([0.345, 0.478, 0.05], [0, 1, 0], 0.0035);
+  sb.box('graphite', 0.05, 0.075, 0.12, 0.34, 0.5075, 0, 0.006);
+  for (let i = 0; i < 4; i++) sb.box('alu', 0.04, 0.008, 0.008, 0.34, 0.549, -0.045 + i * 0.03, 0.001);
+  sb.box('dark', 0.008, 0.06, 0.09, 0.369, 0.505, 0, 0.002);
+  for (const z of [-0.03, 0.03]) sb.cyl('steel', 0.006, 0.01, 0.372, 0.49, z, 'x', 12);
+  sb.obj(cable([[0.372, 0.49, 0.03], [0.385, 0.472, 0.045], [0.395, 0.455, 0.045]], 0.004, {M, mat: 'dark'}));
 
   // ---------------------------------------------------------- merge, bolt and tag every unit
   for (const key of ['chassis', 'armour', 'head', 'power', 'control', 'drive', 'thermal', 'sensor']) U[key].flush();
-  // CONTRACT: every mesh casts and receives shadows (parts.js bolts come in with castShadow off)
   group.traverse((o) => {
     if (o.isMesh) o.castShadow = o.receiveShadow = true;
   });
-  // per-frame body-internal animation hook: the body is rigid, explode / ghosts / section cut are robot.js's job
   function update(pose) {}
   group.userData.parts = {hipPads: LEGS.length, units: units.length};
   return {group, units, anchors, update};
 }
-

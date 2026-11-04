@@ -179,17 +179,18 @@ export function passiveDrum(M, r, len, x = 0, y = 0, z = 0) {
 }
 
 // ------------------------------------------------------------ legs: sizes (m)
-// Official look: slim white capsule links (oval section ~80 x 70 mm) between compact black drums (diameter ~1.25-1.35x
-// the link height) that carry a broad orange ring band, a dark face, a bolt circle and a steel hub; the tibia tapers
-// down to a black needle with a flared orange collar.
+// v9 look: elegant arthropod legs. A compact coxa with the hip-pitch drum, a sculpted tapered ivory femur shell
+// (one lofted shell, fuller near the hip, a thin groove, a dark tendon cable along the top) over a graphite core, a
+// knee drum sandwiched by ivory cheek plates, a slender tapering tibia shell with two panel lines, a small ankle
+// drum and a short tarsus ending in a dark curved claw tip whose point is the IK foot point.
 export const LEGGEO = {
   hipYaw: {r: 0.05, len: 0.09}, // vertical axis, on the hip mount
   hipPitch: {r: 0.05, len: 0.096}, // at the coxa end, axis across the leg plane
-  knee: {r: 0.047, len: 0.09},
-  ankle: {r: 0.022, len: 0.04, at: 0.35}, // passive foot collar on the tibia (m from the knee): elastomer + load cell
-  femur: {h: 0.08, w: 0.07}, // capsule shell section (height y, width z)
-  tibia: {h: 0.072, w: 0.062, end: 0.05}, // section at the knee; tapers to end (height) at the collar
-  needle: [0.367, LEG.tibia - 0.004], // needle from / to (m from the knee); the rubber tip sits on the foot point
+  knee: {r: 0.039, len: 0.084}, // v9.1: 15% slimmer, sleeved by the femur / tibia cheeks, thin orange seam
+  ankle: {r: 0.022, len: 0.044, at: LEG.tibia - 0.118}, // passive ankle drum on the tibia (m from the knee)
+  femur: {h: 0.104, w: 0.09, r: 0.017}, // peak lofted shell section (height y, width z)
+  tibia: {h: 0.07, w: 0.066, endH: 0.036, endW: 0.034, r: 0.015}, // section at the knee; tapers to endH x endW
+  needle: [LEG.tibia - 0.075, LEG.tibia], // tarsus claw from / to (m from the knee); the point is the foot point
 };
 const G = LEGGEO;
 /** hip axis -> contact face of the hip pad on the side beam (m, inward); body.js puts the pad face there */
@@ -205,13 +206,14 @@ const ringArc = (rO, rI, h, seg, phi0, phiL) => {
  * the reference drum's broad orange band, added to a parts.actuator() group (actuator frame, axis +y): split like the
  * housing into a 270-degree body and a 90-degree window piece, the window piece joins act.cut so jointCut moves it too
  */
-function drumBand(M, a, cutPhi) {
+function drumBand(M, a, cutPhi, thin = false) {
   const {r, len} = a.act;
   const w0 = cutPhi - Math.PI / 4;
-  const h = len * 0.22;
-  const y = len * 0.21;
-  const body = part(M, ringArc(r * 1.05, r * 0.96, h, 34, w0 + Math.PI / 2, Math.PI * 1.5).translate(0, y, 0), 'orange');
-  const win = part(M, ringArc(r * 1.05, r * 0.96, h, 12, w0, Math.PI / 2).translate(0, y, 0), 'orange');
+  const h = thin ? len * 0.075 : len * 0.22;
+  const y = thin ? len * 0.3 : len * 0.21;
+  const rO = thin ? r * 1.025 : r * 1.05;
+  const body = part(M, ringArc(rO, r * 0.96, h, 34, w0 + Math.PI / 2, Math.PI * 1.5).translate(0, y, 0), 'orange');
+  const win = part(M, ringArc(rO, r * 0.96, h, 12, w0, Math.PI / 2).translate(0, y, 0), 'orange');
   win.userData.shell = 'cut';
   win.userData.cutDir = [Math.sin(cutPhi), 0, Math.cos(cutPhi)];
   a.add(body, win);
@@ -219,52 +221,131 @@ function drumBand(M, a, cutPhi) {
   return a;
 }
 /** a joint drum laid along +z (output +z) with the broad orange band; window toward the link frame's +y */
-const zDrum = (o) => drumBand(o.M, zActuator(o), Math.PI);
+const zDrum = (o) => drumBand(o.M, zActuator(o), Math.PI, !!o.thin);
+/** an ivory sleeve arc round a z-axis drum at (x, 0), lathe angles phi0..phi0+phiL (270 deg = -x, 90 deg = +x) */
+const drumSleeve = (a, x, phi0, phiL, k = 1) =>
+  ringArc(a.r * 1.13 * k, a.r * 1.0, a.len * 0.78, 20, phi0, phiL).rotateX(Math.PI / 2).translate(x, 0, -a.len * 0.06);
 
-/**
- * a smooth capsule shell along x: hemispherical nose radius r0 starting at x0, straight taper, cap radius r1 ending at
- * x1; the section is an oval (height 2r, width 2r*sz). Returns {geo, R(x)} with R the local section half-height.
- */
-function pod(x0, x1, r0, r1, sz, seg = 30) {
-  const c0 = x0 + r0;
-  const c1 = x1 - r1;
-  const p = [];
-  const N = 9;
-  for (let a = 0; a <= N; a++) {
-    const t = (a / N) * Math.PI / 2;
-    p.push(new THREE.Vector2(r0 * Math.sin(t), c0 - r0 * Math.cos(t)));
-  }
-  for (let a = 0; a <= N; a++) {
-    const t = Math.PI / 2 + (a / N) * Math.PI / 2;
-    p.push(new THREE.Vector2(Math.max(0, r1 * Math.sin(t)), c1 - r1 * Math.cos(t)));
-  }
-  const geo = new THREE.LatheGeometry(p, seg).rotateZ(-Math.PI / 2).scale(1, 1, sz);
-  const R = (x) => r0 + (r1 - r0) * Math.min(1, Math.max(0, (x - c0) / Math.max(1e-6, c1 - c0)));
-  return {geo, R};
-}
-/** a dark seam line round the capsule at x (oval section like pod) */
-const seamAt = (R, x, sz) => xcyl(R(x) + 0.0011, x - 0.0011, x + 0.0011, 32).scale(1, 1, sz);
-/** black bolt dots on the capsule surface: stations [x], angles [theta from +y toward +z] */
-function podDots(R, sz, xs, th, r = 0.0042) {
-  const list = [];
-  for (const x of xs)
-    for (const t of th) {
-      const c = Math.cos(t);
-      const s = Math.sin(t);
-      const n = new V3(0, c, s / sz).normalize();
-      list.push({p: [x, R(x) * c + n.y * 0.0004, R(x) * sz * s + n.z * 0.0004], n: n.toArray(), r});
+// ------------------------------------------------------------ lofted shells (superellipse sections along x)
+const TAU = Math.PI * 2;
+const DEG = Math.PI / 180;
+/** section from stations [[x, halfHeight, halfWidth], ...] with a cosine blend */
+function stations(P, n = 2.5) {
+  return (x) => {
+    if (x <= P[0][0]) return {h: P[0][1], w: P[0][2], n};
+    for (let i = 0; i < P.length - 1; i++) {
+      const [x0, h0, w0] = P[i];
+      const [x1, h1, w1] = P[i + 1];
+      if (x <= x1) {
+        const t = (1 - Math.cos((Math.PI * (x - x0)) / (x1 - x0))) / 2;
+        return {h: h0 + (h1 - h0) * t, w: w0 + (w1 - w0) * t, n};
+      }
     }
-  return list;
+    const L = P[P.length - 1];
+    return {h: L[1], w: L[2], n};
+  };
 }
-/** a slim internal skeleton (ribbed graphite link + steel end blocks) inside a capsule, internal:true for x-ray */
+/** superellipse section point [y, z] at phi (0 = +y, 90 deg = +z), scale k */
+function sePt(s, phi, k = 1) {
+  const c = Math.cos(phi);
+  const sn = Math.sin(phi);
+  const e = 2 / s.n;
+  return [s.h * k * Math.sign(c) * Math.abs(c) ** e, s.w * k * Math.sign(sn) * Math.abs(sn) ** e];
+}
+/** a lofted shell piece x0..x1, phi0..phi0+phiL, scale k (indexed, smooth normals, outward faces) */
+function loft(S, x0, x1, phi0 = 0, phiL = TAU, k = 1, nx = 16, nphi = 36) {
+  const np = Math.max(2, Math.round((nphi * phiL) / TAU));
+  const pos = [];
+  const idx = [];
+  for (let i = 0; i <= nx; i++) {
+    const x = x0 + ((x1 - x0) * i) / nx;
+    const s = S(x);
+    for (let j = 0; j <= np; j++) {
+      const [y, z] = sePt(s, phi0 + (phiL * j) / np, k);
+      pos.push(x, y, z);
+    }
+  }
+  const W = np + 1;
+  for (let i = 0; i < nx; i++)
+    for (let j = 0; j < np; j++) {
+      const a = i * W + j;
+      idx.push(a, a + 1, a + W, a + 1, a + W + 1, a + W);
+    }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setIndex(idx);
+  geo.computeVertexNormals();
+  return geo;
+}
+/** a point on the shell surface at (x, phi) lifted e along the normal, with that normal */
+function onShell(S, x, phi, k = 1, e = 0.0004) {
+  const s = S(x);
+  const [y, z] = sePt(s, phi, k);
+  const [y1, z1] = sePt(s, phi + 0.002, k);
+  const n = new V3(0, z1 - z, -(y1 - y)).normalize();
+  return {p: [x, y + n.y * e, z + n.z * e], n: n.toArray()};
+}
+/** a tapered round tube along the polyline pts [[x, y, z], ...], radius rad(t) */
+function taperTube(pts, rad, n = 24, seg = 14) {
+  const curve = new THREE.CatmullRomCurve3(pts.map((p) => new V3(...p)), false, 'centripetal');
+  const frames = curve.computeFrenetFrames(n, false);
+  const pos = [];
+  const idx = [];
+  for (let i = 0; i <= n; i++) {
+    const t = i / n;
+    const p = curve.getPointAt(t);
+    const N = frames.normals[i];
+    const B = frames.binormals[i];
+    const r = rad(t);
+    for (let j = 0; j < seg; j++) {
+      const a = (j / seg) * TAU;
+      pos.push(p.x + (N.x * Math.cos(a) + B.x * Math.sin(a)) * r, p.y + (N.y * Math.cos(a) + B.y * Math.sin(a)) * r, p.z + (N.z * Math.cos(a) + B.z * Math.sin(a)) * r);
+    }
+  }
+  for (let i = 0; i < n; i++)
+    for (let j = 0; j < seg; j++) {
+      const a = i * seg + j;
+      const b = i * seg + ((j + 1) % seg);
+      idx.push(a, b, a + seg, b, b + seg, a + seg);
+    }
+  const c0 = pos.length / 3;
+  const P0 = curve.getPointAt(0);
+  pos.push(P0.x, P0.y, P0.z);
+  for (let j = 0; j < seg; j++) idx.push(c0, (j + 1) % seg, j);
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setIndex(idx);
+  geo.computeVertexNormals();
+  return geo;
+}
+/** a slim internal skeleton (ribbed graphite link + steel end blocks) inside a shell, internal:true for x-ray */
 function skeleton(root, x0, len, h, w, M) {
   const k = ribbedLink(len, h, w, {M, armor: false});
   k.position.x = x0;
   k.traverse((m) => m.isMesh && (m.userData.internal = true));
   root.add(k);
 }
-const D = Math.PI / 180;
-
+/** the face offset of a drum's output flange (as parts.actuator lays it out) */
+const flangeZ = (a) => a.len / 2 + a.len * 0.085 + 0.004;
+/**
+ * an ivory link shell x0..x1 over a graphite core: ivory over the top and both flanks, graphite keel underneath,
+ * dark groove bands at the fractions in grooves, bolt dots beside them. Returns the section function.
+ */
+function limbShell(add, root, M, S, x0, x1, grooves, dots = true) {
+  const L = x1 - x0;
+  const top = [-128 * DEG, 256 * DEG];
+  const cuts = grooves.map((f) => x0 + L * f);
+  const xs = [x0, ...cuts, x1];
+  for (let i = 0; i < xs.length - 1; i++) {
+    const a = xs[i] + (i ? 0.0016 : 0);
+    const b = xs[i + 1] - (i < xs.length - 2 ? 0.0016 : 0);
+    add(loft(S, a, b, ...top, 1, Math.max(4, Math.round(((b - a) / L) * 30)), 44), 'white');
+  }
+  add(loft(S, x0, x1, 0, TAU, 0.9, 24, 32), 'graphite'); // core / keel, shows under the shell and in the grooves
+  const bl = [];
+  if (dots) for (const x of cuts) for (const s of [-1, 1]) for (const a of [50, 110]) bl.push({...onShell(S, x + s * 0.011, s * a * DEG), r: 0.003});
+  if (bl.length) root.add(bolts(bl, {M, r: 0.003}));
+}
 /** the static hip mount, frame: x outward, y up. Mounting flange + saddle + the hip-yaw drum. */
 function tmplMount(M, feature) {
   const root = new THREE.Group();
@@ -309,77 +390,90 @@ function tmplCoxa(M, feature) {
 const boxFrom = (x0, x1, y0, y1, z0, z1, r = 0.004) => rbox(x1 - x0, y1 - y0, z1 - z0, r).translate((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
 const boltCircleY = (r, n, y) => boltCircle(r, n, y, Math.PI / n);
 
-/** the femur, frame: origin at the hip-pitch axis, x toward the knee. Output neck, white capsule shell, knee drum. */
+/** the femur, frame: origin at the hip-pitch axis, x toward the knee. Lofted ivory shell, tendon, knee drum + cheek. */
 function tmplFemur(M, feature) {
   const root = new THREE.Group();
-  const add = (g, mat) => root.add(part(M, g, mat));
+  const add = (g, mat, ud = {}) => root.add(part(M, g, mat, ud));
   const {h, w} = G.femur;
-  const sz = w / h;
-  const rh = G.hipPitch.r;
-  const rk = G.knee.r;
-  const r0 = h / 2;
-  const x0 = rh * 0.86;
-  const x1 = LEG.femur - rk * 0.86;
-  const S = pod(x0, x1, r0, r0 * 0.93, sz);
-  add(S.geo, 'white');
-  // dark output necks: hip-pitch flange -> shell, shell -> knee housing
-  add(xcyl(0.023, rh * 0.62, x0 + r0 * 0.7, 24), 'graphite');
-  add(xcyl(0.021, x1 - r0 * 0.7, LEG.femur - rk * 0.62, 24), 'graphite');
-  // two thin seams split the shell into three plates; sparse black bolt dots next to the seams and the ends
-  const L = x1 - x0;
-  const s1 = x0 + L * 0.34;
-  const s2 = x0 + L * 0.68;
-  add(merge([seamAt(S.R, s1, sz), seamAt(S.R, s2, sz)]), 'dark');
-  root.add(bolts(podDots(S.R, sz, [x0 + r0 * 0.9, s1 + 0.016, s2 + 0.016, x1 - r0 * 0.9], [40 * D, -40 * D, 140 * D, -140 * D]), {M}));
-  skeleton(root, x0 + 0.02, L - 0.04, h * 0.5, w * 0.5, M);
-  const kn = zDrum({...G.knee, reducer: 'harmonic', M, x: LEG.femur});
+  const F = LEG.femur;
+  const x0 = 0.026;
+  const x1 = F - 0.026;
+  const S = stations([[x0, 0.028, 0.028], [0.09, h * 0.48, w * 0.47], [0.16, h * 0.5, w * 0.48], [0.3, h * 0.38, w * 0.4], [x1, 0.027, 0.027]]);
+  limbShell(add, root, M, S, x0, x1, [0.62]);
+  // clevis on the hip-pitch output flange (+z): an ivory plate from the drum hub into the shell flank
+  const zc = flangeZ(G.hipPitch) + 0.004;
+  add(lever(0, G.hipPitch.r * 0.82, 0.11, 0.03, 0.008, zc), 'white');
+  add(cyl(G.hipPitch.r * 0.5, 0.004, 32).rotateX(Math.PI / 2).translate(0, 0, zc + 0.005), 'graphite');
+  root.add(bolts(boltCircle(G.hipPitch.r * 0.6, 6, 0, 0).map((b) => ({p: [b.p[0], b.p[2], zc + 0.0045], n: [0, 0, 1]})), {M, r: 0.0028, head: true, mat: 'steel'}));
+  // dark tendon cable along the top flank (hip -> knee), held by three graphite clips
+  const tp = [];
+  for (const x of [0.06, 0.12, 0.2, 0.28, 0.34]) tp.push(onShell(S, x, 24 * DEG, 1, 0.006).p);
+  add(taperTube(tp, () => 0.0052, 30, 10), 'dark');
+  const clips = [];
+  for (const x of [0.11, 0.2, 0.29]) {
+    const q = onShell(S, x, 24 * DEG, 1, 0.006);
+    clips.push(rbox(0.012, 0.014, 0.014, 0.003).lookAt(new V3(...q.n)).translate(...q.p));
+  }
+  add(merge(clips), 'graphite');
+  skeleton(root, x0 + 0.03, x1 - x0 - 0.06, 0.04, 0.036, M);
+  // knee drum, axis z (output +z drives the tibia); an ivory cheek plate on the back face (-z) sleeves it
+  const kn = zDrum({...G.knee, reducer: 'harmonic', M, x: F, thin: true});
   kn.name = 'knee';
   root.add(kn);
-  add(zcyl(0.016, 0.012, LEG.femur, 0, -(G.knee.len / 2 + 0.005), 24), 'steel');
+  add(zcyl(0.016, 0.012, F, 0, -(G.knee.len / 2 + 0.005), 24), 'steel');
+  const zb = -(G.knee.len / 2 + 0.015);
+  add(lever(F - 0.1, 0.028, F, G.knee.r * 0.92, 0.008, zb), 'white');
+  // the femur shell's cheeks sleeve the drum on the hip side (clear of the jointCut window on top)
+  add(drumSleeve(G.knee, F, 228 * DEG, 84 * DEG), 'white');
+  add(cyl(0.018, 0.004, 24).rotateX(Math.PI / 2).translate(F, 0, zb - 0.005), 'steel');
   return {root, feat: feature ? kn : null};
 }
 
-/** the tibia, frame: origin at the knee axis, x toward the foot. Neck, tapered capsule, foot collar, needle. */
+/** the tibia, frame: origin at the knee axis, x toward the foot. Slender lofted shell, ankle drum, tarsus claw. */
 function tmplTibia(M) {
   const root = new THREE.Group();
   const add = (g, mat, internal = false) => root.add(part(M, g, mat, {internal}));
-  const {h, w, end} = G.tibia;
-  const sz = w / h;
-  const rk = G.knee.r;
-  const r0 = h / 2;
-  const r1 = end / 2;
-  const x0 = rk * 0.86;
-  const x1 = G.ankle.at - 0.012;
-  const S = pod(x0, x1, r0, r1, sz);
-  add(S.geo, 'white');
-  add(xcyl(0.021, rk * 0.62, x0 + r0 * 0.7, 24), 'graphite');
-  const L = x1 - x0;
-  const s1 = x0 + L * 0.4;
-  add(seamAt(S.R, s1, sz), 'dark');
-  root.add(bolts(podDots(S.R, sz, [x0 + r0 * 0.9, s1 + 0.016, x1 - 0.075], [40 * D, -40 * D, 140 * D, -140 * D]), {M, r: 0.0038}));
-  // thin orange band near the lower end of the shell
-  const xb = x1 - 0.05;
-  add(xcyl(S.R(xb) + 0.0018, xb - 0.005, xb + 0.005, 32).scale(1, 1, sz), 'orange');
-  skeleton(root, x0 + 0.02, L - 0.06, h * 0.45, w * 0.45, M);
-  // foot module: a black collar (passive compliance: elastomer pack + load cell inside), a flared orange collar ring,
-  // then the long black needle
+  const {h, w, endH, endW} = G.tibia;
   const A = G.ankle;
-  add(xcyl(A.r, x1 - 0.02, A.at + A.len / 2 - 0.012, 28, A.r * 0.88), 'dark');
-  add(xcyl(A.r * 0.92, G.needle[0] - 0.013, G.needle[0] - 0.001, 28, A.r * 1.2), 'orange');
-  add(xcyl(A.r * 1.2, G.needle[0] - 0.001, G.needle[0] + 0.003, 28, A.r * 0.9), 'dark');
-  add(xcyl(A.r * 0.86, G.needle[0] + 0.003, G.needle[1], 24, 0.0022), 'dark');
-  add(xcyl(A.r * 0.75, A.at - 0.012, A.at + 0.008, 20), 'rubber', true); // elastomer pack
-  add(xcyl(A.r * 0.6, A.at + 0.008, A.at + 0.014, 20), 'steel', true); // load cell
-  add(xcyl(0.003, x0 + 0.03, G.needle[0], 8), 'copper', true); // sensor lead down to the tip
+  const x0 = 0.024;
+  const x1 = A.at - A.r * 0.4;
+  const S = stations([[x0, 0.026, 0.026], [0.07, h * 0.52, w * 0.52], [0.2, h * 0.46, w * 0.46], [x1 - 0.09, endH * 0.6, endW * 0.6], [x1, endH * 0.42, endW * 0.42]], 2.4);
+  limbShell((g, m) => add(g, m), root, M, S, x0, x1, [0.3, 0.74]);
+  // clevis on the knee output flange (+z)
+  const zc = flangeZ(G.knee) + 0.004;
+  add(lever(0, G.knee.r * 0.82, 0.1, 0.026, 0.008, zc), 'white');
+  add(cyl(G.knee.r * 0.5, 0.004, 32).rotateX(Math.PI / 2).translate(0, 0, zc + 0.005), 'graphite');
+  root.add(bolts(boltCircle(G.knee.r * 0.6, 6, 0, 0).map((b) => ({p: [b.p[0], b.p[2], zc + 0.0045], n: [0, 0, 1]})), {M, r: 0.0026, head: true, mat: 'steel'}));
+  add(drumSleeve(G.knee, 0, 52 * DEG, 76 * DEG, 1.04), 'white'); // tibia cheeks sleeve the knee on the foot side
+  // one small orange accent on the outer flank below the knee
+  add(loft(S, 0.11, 0.124, 70 * DEG, 40 * DEG, 1.006, 2, 120), 'orange');
+  skeleton(root, x0 + 0.03, x1 - x0 - 0.07, 0.03, 0.028, M);
+  // ankle: a small passive drum (elastomer pack + load cell + contact switch inside)
+  root.add(passiveDrum(M, A.r, A.len, A.at, 0, 0));
+  // tarsus: a short graphite segment with an orange collar, then the dark curved claw tip ending on the foot point
+  const T = LEG.tibia;
+  const [n0] = G.needle;
+  add(xcyl(0.0125, A.at + A.r * 0.7, n0 + 0.006, 20, 0.0105), 'graphite');
+  add(xcyl(0.0135, n0 - 0.004, n0 + 0.006, 24), 'orange');
+  add(taperTube([[n0 + 0.004, 0, 0], [n0 + 0.03, 0.007, 0], [T - 0.022, 0.0075, 0], [T, 0, 0]], (t) => 0.0115 * (1 - t) + 0.0016, 24, 14), 'dark');
+  // two short graphite spurs at the tibia-tarsus joint (scorpion leg spurs), pointing distally and out
+  const spurs = [];
+  for (const s of [1, -1]) {
+    const d = new V3(0.86, -0.2, s * 0.47).normalize();
+    const c = new THREE.ConeGeometry(0.0042, 0.026, 10).translate(0, 0.013, 0).applyQuaternion(new THREE.Quaternion().setFromUnitVectors(UP, d));
+    spurs.push(c.translate(A.at - 0.012, -0.006, s * (A.len / 2 - 0.004)));
+  }
+  add(merge(spurs), 'graphite');
+  add(xcyl(0.003, x0 + 0.03, A.at, 8), 'copper', true); // sensor lead down to the ankle
   return {root, feat: null};
 }
 
-/** the foot tip, frame: origin on the foot point, y up, x along the leg heading. Rubber tip ball + pressure film. */
+/** the foot tip, frame: origin on the foot point, y up, x along the leg heading. Rubber tip + pressure film. */
 function tmplPad(M) {
   const root = new THREE.Group();
   const add = (g, mat, internal = false) => root.add(part(M, g, mat, {internal}));
-  add(new THREE.SphereGeometry(0.0042, 14, 10).translate(0, 0.0042, 0), 'rubber');
-  add(cyl(0.0028, 0.0012, 12).translate(0, 0.0045, 0), 'copper', true); // pressure sensor film
+  add(new THREE.SphereGeometry(0.0034, 14, 10).translate(0, 0.0034, 0), 'rubber');
+  add(cyl(0.0024, 0.0012, 12).translate(0, 0.0038, 0), 'copper', true); // pressure sensor film
   return {root, feat: null};
 }
 
@@ -434,7 +528,7 @@ export function buildLegs(M) {
     } else for (const k in B) instance(M, T[k], B[k]);
     anchors[`hip${L.id}`] = marker(B.coxa, LEG.coxa, 0, G.hipPitch.len / 2 + 0.01);
     anchors[`knee${L.id}`] = marker(B.femur, LEG.femur, 0, G.knee.len / 2 + 0.01);
-    anchors[`foot${L.id}`] = marker(B.tibia, G.ankle.at, 0, 0);
+    anchors[`foot${L.id}`] = marker(B.tibia, LEG.tibia, 0, 0);
     tag(A, {sys, order: ORDER.leg, explode: [L.hip[0] * 0.6, 0.05, L.side * 0.45], cut: false});
     group.add(A);
     assemblies[sys] = A;
